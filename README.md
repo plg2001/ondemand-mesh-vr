@@ -52,6 +52,8 @@ benchmarks/                 profiler, modello FLOPs/memoria, stimatore visore, s
 docs/                       analisi dei requisiti e metodologia
 tests/                      test unitari (pytest)
 third_party/, checkpoints/  codice e pesi upstream (scaricati, non versionati)
+                            checkpoints/huggingface/  = pesi MeshAnything V2, FastMesh, OPT (cache HF spostata qui)
+                            checkpoints/treemeshgpt/  = pesi TreeMeshGPT (Google Drive)
 ```
 
 > `models/` non contiene `__init__.py` di proposito: FastMesh ha un package top-level chiamato `models`,
