@@ -1,0 +1,59 @@
+# third_party/FastMesh/models/{mesh_gen,single_gpt,vert_refine,face_gen}.py + HF config.json
+model: FastMesh
+repo: https://github.com/jhkim0759/FastMesh
+license: S-Lab License 1.0 (non-commercial)
+input: {points: 8192, normals: true}
+output: {max_faces: 1512}
+generation:
+  cond_tokens: 257
+  max_new_tokens: 1514         # gen_n_max_triangles + 2
+  tokens_per_face: 0.65        # 1 token per vertex (+ 8^3 block tokens), V ~ F/2 on closed meshes
+  vertices_per_face: 0.5
+  default_faces: 800
+components:
+  - name: point_encoder
+    measured_keys: ["vert_gen.point_encoder"]
+    kind: perceiver
+    n_points: 8192
+    point_dim: 54
+    width: 768
+    n_latents: 257
+    n_layers: 8
+    ffn_mult: 4
+  - name: vertex_decoder
+    measured_keys: ["vert_gen.transformer"]
+    kind: decoder_ar           # OPT-350m, vocab 8^3 + 16^3 + 3
+    d_model: 1024
+    n_layers: 24
+    n_heads: 16
+    ffn_dim: 4096
+    ffn: relu
+    vocab: 4611
+  - name: vertex_refiner
+    measured_keys: ["vert_gen.refine_net"]
+    kind: encoder_bidir        # one pass over the generated vertices
+    d_model: 1024
+    n_layers: 6
+    n_heads: 8
+    ffn_dim: 4096
+    ffn: gelu
+    seq: vertices
+  - name: face_generator
+    measured_keys: [face_gen]
+    kind: encoder_bidir        # one pass, then V x V adjacency logits
+    d_model: 768
+    n_layers: 24
+    n_heads: 8
+    ffn_dim: 3072
+    ffn: gelu
+    seq: vertices
+    pairwise: true
+variants:
+  V1K: {output: {max_faces: 1512}, generation: {max_new_tokens: 1514}}
+  V4K: {output: {max_faces: 4512}, generation: {max_new_tokens: 4514}}
+params_measured:
+  total: 1099147427
+  vert_gen.point_encoder: 177530240
+  vert_gen.transformer: 313572352
+  vert_gen.refine_net: 255494531
+  face_gen: 350188960

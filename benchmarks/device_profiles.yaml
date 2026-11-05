@@ -1,0 +1,89 @@
+# Hardware profiles for the roofline / memory / energy estimator (benchmarks/estimator.py).
+# Every number carries a source and a confidence level:
+#   official = vendor documentation, derived = computed from official figures, assumption = modelling choice.
+# Ranges [low, high] are used for the sensitivity analysis (best/worst case).
+
+defaults:
+  efficiency_memory: 0.60        # fraction of peak DRAM bandwidth reached by batch-1 GEMV decoding (assumption)
+  efficiency_compute: 0.35       # fraction of peak FLOPS reached by mobile GPU compute shaders (assumption)
+  runtime_overhead_bytes: 400000000  # inference runtime + framework + activations scratch (assumption)
+
+devices:
+  quest2:
+    label: "Meta Quest 2 (Snapdragon XR2 Gen 1, Adreno 650)"
+    kind: headset
+    gpu_fp32_tflops: {value: 1.2, source: "UploadVR, Oculus Quest 2 benchmarks (Adreno 650 = 1.2 TFLOPS)", confidence: official-press}
+    gpu_fp16_tflops: {value: 2.4, source: "Adreno double-rate FP16 over FP32", confidence: derived}
+    mem_bandwidth_gbs: {value: 34.1, range: [34.1, 44.0], source: "LPDDR4X-4266 x 64 bit = 34.1 GB/s; ~44 GB/s reported by developers", confidence: derived}
+    ram_total_gb: {value: 6, source: "Meta Quest 2 specifications", confidence: official}
+    app_memory_budget_bytes: {value: 4724464025, source: "Meta Horizon OS docs 'Memory / RAM': 4.4 GiB PSS limit for Quest 2", confidence: official}
+    battery_wh: {value: 14.0, source: "3640 mAh, 14 Wh (Meta / LaptopMag spec comparison)", confidence: official}
+    soc_power_w: {value: 6.0, range: [4.0, 8.0], source: "sustained SoC power under full GPU+CPU load", confidence: assumption}
+    thermal_sustained_factor: {value: 0.7, range: [0.5, 0.9], source: "fixed CPU/GPU levels on Horizon OS, sustained vs peak", confidence: assumption}
+    per_step_overhead_ms: {value: 2.0, range: [0.5, 5.0], source: "~250 compute dispatches per 24-layer decoder step on a mobile Vulkan/OpenCL driver (5-20 us each), no Python", confidence: assumption}
+    display_hz: 90
+  quest3s:
+    label: "Meta Quest 3S (Snapdragon XR2 Gen 2, Adreno 740)"
+    kind: headset
+    gpu_fp32_tflops: {value: 3.0, range: [2.4, 3.0], source: "Qualcomm: XR2 Gen 2 up to 2.5x GPU performance vs XR2 Gen 1 (1.2 TFLOPS); UploadVR: >2x Quest 2", confidence: derived}
+    gpu_fp16_tflops: {value: 6.0, range: [4.8, 6.0], source: "double-rate FP16", confidence: derived}
+    mem_bandwidth_gbs: {value: 51.2, range: [44.0, 51.2], source: "8 GB LPDDR5, assuming 64-bit @ 6400 MT/s", confidence: derived}
+    ram_total_gb: {value: 8, source: "Meta Quest 3S specifications (8 GB LPDDR5)", confidence: official}
+    app_memory_budget_bytes: {value: 6174015488, source: "Meta Horizon OS docs 'Memory / RAM': 5.75 GiB PSS limit for Quest 3 / 3S", confidence: official}
+    battery_wh: {value: 16.74, source: "4324 mAh, 16.74 Wh (Meta / LaptopMag)", confidence: official}
+    soc_power_w: {value: 7.0, range: [5.0, 9.0], source: "sustained SoC power under full GPU+CPU load", confidence: assumption}
+    thermal_sustained_factor: {value: 0.7, range: [0.5, 0.9], source: "see quest2", confidence: assumption}
+    per_step_overhead_ms: {value: 1.5, range: [0.4, 4.0], source: "see quest2", confidence: assumption}
+    display_hz: 90
+
+  # ---- edge node references (used for the offloading comparison) ----
+  edge_rtx4090:
+    label: "Edge node: NVIDIA RTX 4090 (24 GB)"
+    kind: edge
+    gpu_fp32_tflops: {value: 82.6, source: "NVIDIA Ada whitepaper", confidence: official}
+    gpu_fp16_tflops: {value: 165.2, source: "NVIDIA Ada whitepaper (dense FP16 tensor, FP32 acc.)", confidence: official}
+    mem_bandwidth_gbs: {value: 1008, source: "NVIDIA RTX 4090 specifications", confidence: official}
+    app_memory_budget_bytes: {value: 24000000000, source: "24 GB GDDR6X", confidence: official}
+    per_step_overhead_ms: {value: 4.0, range: [2.0, 8.0], source: "calibrated: MeshAnything README reports ~45 s/mesh on A6000 for <=10k tokens (~4.5 ms/token), i.e. HF generate is launch/Python bound on big GPUs", confidence: derived}
+    efficiency_memory: 0.75
+    efficiency_compute: 0.5
+  edge_rtx3060:
+    label: "Edge node: NVIDIA RTX 3060 (12 GB)"
+    kind: edge
+    gpu_fp32_tflops: {value: 12.7, source: "NVIDIA RTX 3060 specifications", confidence: official}
+    gpu_fp16_tflops: {value: 51.0, source: "Ampere GA106 tensor FP16 (dense)", confidence: official}
+    mem_bandwidth_gbs: {value: 360, source: "NVIDIA RTX 3060 specifications", confidence: official}
+    app_memory_budget_bytes: {value: 12000000000, source: "12 GB GDDR6", confidence: official}
+    per_step_overhead_ms: {value: 4.0, range: [2.0, 8.0], source: "see edge_rtx4090", confidence: derived}
+    efficiency_memory: 0.75
+    efficiency_compute: 0.5
+
+  # ---- local machine used in this thesis (for validating the model against measurements) ----
+  local_gt1030:
+    label: "Local: NVIDIA GeForce GT 1030 (2 GB, Pascal sm_61)"
+    kind: local
+    match: "GT 1030"            # substring of torch.cuda.get_device_name(): used to validate the roofline on real runs
+    gpu_fp32_tflops: {value: 1.13, source: "384 CUDA cores x 1.468 GHz boost x 2", confidence: derived}
+    gpu_fp16_tflops: {value: 1.13, source: "native FP16 rate on GP108 is 1/64, but cuBLAS runs FP16 GEMM with FP32 arithmetic on Pascal -> FP32 rate", confidence: derived}
+    mem_bandwidth_gbs: {value: 48.0, source: "GDDR5 64-bit @ 6 Gbps", confidence: official}
+    app_memory_budget_bytes: {value: 2147483648, source: "2 GB GDDR5 (shared with the Windows desktop)", confidence: official}
+    per_step_overhead_ms: {value: 0.3, source: "assumption", confidence: assumption}
+  local_i5_9400:
+    label: "Local: Intel Core i5-9400 (6C, AVX2) + DDR4-2666 single channel"
+    kind: local
+    match: "i5-9400"
+    gpu_fp32_tflops: {value: 0.75, source: "6 cores x 3.9 GHz x 32 FLOP/cycle (AVX2 FMA)", confidence: derived}
+    gpu_fp16_tflops: {value: 0.75, source: "no native FP16 arithmetic", confidence: derived}
+    mem_bandwidth_gbs: {value: 21.3, source: "DDR4-2666 x 64 bit (1 DIMM)", confidence: derived}
+    app_memory_budget_bytes: {value: 8500000000, source: "8 GB RAM (shared with Windows)", confidence: official}
+    per_step_overhead_ms: {value: 2.0, source: "PyTorch eager CPU dispatch, assumption", confidence: assumption}
+    efficiency_memory: 0.7
+    efficiency_compute: 0.3
+
+network:
+  wifi6_local_edge:
+    label: "Wi-Fi 6 headset <-> edge on the same LAN"
+    uplink_mbps: {value: 200, source: "effective Wi-Fi 6 throughput (assumption)", confidence: assumption}
+    downlink_mbps: {value: 400, source: "effective Wi-Fi 6 throughput (assumption)", confidence: assumption}
+    rtt_ms: {value: 5, source: "assumption", confidence: assumption}
+    radio_power_w: {value: 1.0, source: "Wi-Fi radio active power (assumption)", confidence: assumption}
