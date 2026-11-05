@@ -9,11 +9,17 @@ import sys
 from pathlib import Path
 from typing import Iterator, Optional
 
-import torch
-
 ROOT = Path(__file__).resolve().parents[2]
 THIRD_PARTY = ROOT / "third_party"
 CHECKPOINTS = ROOT / "checkpoints"
+
+# Keep every downloaded weight under checkpoints/ (Hugging Face included) instead of ~/.cache/huggingface.
+# Must run before huggingface_hub / transformers are imported, since they read these variables at import time.
+# An explicit HF_HOME / HF_HUB_CACHE set by the user still wins.
+if "HF_HOME" not in os.environ and "HF_HUB_CACHE" not in os.environ:
+    os.environ["HF_HUB_CACHE"] = str(CHECKPOINTS / "huggingface")
+
+import torch  # noqa: E402
 LOCK_FILE = ROOT / "models" / "upstream.lock.json"
 SPECS_DIR = ROOT / "models" / "specs"
 DATA_INPUTS = ROOT / "data" / "inputs"
