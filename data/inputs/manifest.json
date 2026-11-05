@@ -1,0 +1,532 @@
+{
+  "shapes": {
+    "bunny": {
+      "source": "open3d",
+      "source_faces": 69451,
+      "source_vertices": 34834,
+      "canonical_transform": {
+        "center": [
+          -0.0168404,
+          0.1101542,
+          -0.0015369499999999987
+        ],
+        "scale": 6.422648828829987
+      },
+      "reference": "bunny/bunny_ref.npy",
+      "clouds": {
+        "100": {
+          "files": {
+            "ply": {
+              "path": "bunny/bunny_n100.ply",
+              "bytes": 5003
+            },
+            "xyz": {
+              "path": "bunny/bunny_n100.xyz",
+              "bytes": 2965
+            },
+            "npy": {
+              "path": "bunny/bunny_n100.npy",
+              "bytes": 2528
+            }
+          },
+          "raw_bytes_xyz_f32": 1200,
+          "raw_bytes_xyz_normals_f32": 2400
+        },
+        "500": {
+          "files": {
+            "ply": {
+              "path": "bunny/bunny_n500.ply",
+              "bytes": 24203
+            },
+            "xyz": {
+              "path": "bunny/bunny_n500.xyz",
+              "bytes": 14834
+            },
+            "npy": {
+              "path": "bunny/bunny_n500.npy",
+              "bytes": 12128
+            }
+          },
+          "raw_bytes_xyz_f32": 6000,
+          "raw_bytes_xyz_normals_f32": 12000
+        },
+        "2048": {
+          "files": {
+            "ply": {
+              "path": "bunny/bunny_n2048.ply",
+              "bytes": 98508
+            },
+            "xyz": {
+              "path": "bunny/bunny_n2048.xyz",
+              "bytes": 60721
+            },
+            "npy": {
+              "path": "bunny/bunny_n2048.npy",
+              "bytes": 49280
+            }
+          },
+          "raw_bytes_xyz_f32": 24576,
+          "raw_bytes_xyz_normals_f32": 49152
+        },
+        "8192": {
+          "files": {
+            "ply": {
+              "path": "bunny/bunny_n8192.ply",
+              "bytes": 393420
+            },
+            "xyz": {
+              "path": "bunny/bunny_n8192.xyz",
+              "bytes": 242893
+            },
+            "npy": {
+              "path": "bunny/bunny_n8192.npy",
+              "bytes": 196736
+            }
+          },
+          "raw_bytes_xyz_f32": 98304,
+          "raw_bytes_xyz_normals_f32": 196608
+        }
+      }
+    },
+    "box": {
+      "source": "primitive",
+      "source_faces": 12,
+      "source_vertices": 8,
+      "canonical_transform": {
+        "center": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": 1.0
+      },
+      "reference": "box/box_ref.npy",
+      "clouds": {
+        "100": {
+          "files": {
+            "ply": {
+              "path": "box/box_n100.ply",
+              "bytes": 5003
+            },
+            "xyz": {
+              "path": "box/box_n100.xyz",
+              "bytes": 2931
+            },
+            "npy": {
+              "path": "box/box_n100.npy",
+              "bytes": 2528
+            }
+          },
+          "raw_bytes_xyz_f32": 1200,
+          "raw_bytes_xyz_normals_f32": 2400
+        },
+        "500": {
+          "files": {
+            "ply": {
+              "path": "box/box_n500.ply",
+              "bytes": 24203
+            },
+            "xyz": {
+              "path": "box/box_n500.xyz",
+              "bytes": 14722
+            },
+            "npy": {
+              "path": "box/box_n500.npy",
+              "bytes": 12128
+            }
+          },
+          "raw_bytes_xyz_f32": 6000,
+          "raw_bytes_xyz_normals_f32": 12000
+        },
+        "2048": {
+          "files": {
+            "ply": {
+              "path": "box/box_n2048.ply",
+              "bytes": 98508
+            },
+            "xyz": {
+              "path": "box/box_n2048.xyz",
+              "bytes": 60469
+            },
+            "npy": {
+              "path": "box/box_n2048.npy",
+              "bytes": 49280
+            }
+          },
+          "raw_bytes_xyz_f32": 24576,
+          "raw_bytes_xyz_normals_f32": 49152
+        },
+        "8192": {
+          "files": {
+            "ply": {
+              "path": "box/box_n8192.ply",
+              "bytes": 393420
+            },
+            "xyz": {
+              "path": "box/box_n8192.xyz",
+              "bytes": 241819
+            },
+            "npy": {
+              "path": "box/box_n8192.npy",
+              "bytes": 196736
+            }
+          },
+          "raw_bytes_xyz_f32": 98304,
+          "raw_bytes_xyz_normals_f32": 196608
+        }
+      }
+    },
+    "sphere": {
+      "source": "primitive",
+      "source_faces": 5120,
+      "source_vertices": 2562,
+      "canonical_transform": {
+        "center": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": 1.0
+      },
+      "reference": "sphere/sphere_ref.npy",
+      "clouds": {
+        "100": {
+          "files": {
+            "ply": {
+              "path": "sphere/sphere_n100.ply",
+              "bytes": 5003
+            },
+            "xyz": {
+              "path": "sphere/sphere_n100.xyz",
+              "bytes": 2945
+            },
+            "npy": {
+              "path": "sphere/sphere_n100.npy",
+              "bytes": 2528
+            }
+          },
+          "raw_bytes_xyz_f32": 1200,
+          "raw_bytes_xyz_normals_f32": 2400
+        },
+        "500": {
+          "files": {
+            "ply": {
+              "path": "sphere/sphere_n500.ply",
+              "bytes": 24203
+            },
+            "xyz": {
+              "path": "sphere/sphere_n500.xyz",
+              "bytes": 14768
+            },
+            "npy": {
+              "path": "sphere/sphere_n500.npy",
+              "bytes": 12128
+            }
+          },
+          "raw_bytes_xyz_f32": 6000,
+          "raw_bytes_xyz_normals_f32": 12000
+        },
+        "2048": {
+          "files": {
+            "ply": {
+              "path": "sphere/sphere_n2048.ply",
+              "bytes": 98508
+            },
+            "xyz": {
+              "path": "sphere/sphere_n2048.xyz",
+              "bytes": 60399
+            },
+            "npy": {
+              "path": "sphere/sphere_n2048.npy",
+              "bytes": 49280
+            }
+          },
+          "raw_bytes_xyz_f32": 24576,
+          "raw_bytes_xyz_normals_f32": 49152
+        },
+        "8192": {
+          "files": {
+            "ply": {
+              "path": "sphere/sphere_n8192.ply",
+              "bytes": 393420
+            },
+            "xyz": {
+              "path": "sphere/sphere_n8192.xyz",
+              "bytes": 241709
+            },
+            "npy": {
+              "path": "sphere/sphere_n8192.npy",
+              "bytes": 196736
+            }
+          },
+          "raw_bytes_xyz_f32": 98304,
+          "raw_bytes_xyz_normals_f32": 196608
+        }
+      }
+    },
+    "tmg_cat": {
+      "source": "file",
+      "source_faces": 49936,
+      "source_vertices": 35313,
+      "canonical_transform": {
+        "center": [
+          -0.04559716757019672,
+          -0.0069070756094387065,
+          0.005321000232637374
+        ],
+        "scale": 1.000000066322369
+      },
+      "reference": "tmg_cat/tmg_cat_ref.npy",
+      "clouds": {
+        "100": {
+          "files": {
+            "ply": {
+              "path": "tmg_cat/tmg_cat_n100.ply",
+              "bytes": 5003
+            },
+            "xyz": {
+              "path": "tmg_cat/tmg_cat_n100.xyz",
+              "bytes": 2942
+            },
+            "npy": {
+              "path": "tmg_cat/tmg_cat_n100.npy",
+              "bytes": 2528
+            }
+          },
+          "raw_bytes_xyz_f32": 1200,
+          "raw_bytes_xyz_normals_f32": 2400
+        },
+        "500": {
+          "files": {
+            "ply": {
+              "path": "tmg_cat/tmg_cat_n500.ply",
+              "bytes": 24203
+            },
+            "xyz": {
+              "path": "tmg_cat/tmg_cat_n500.xyz",
+              "bytes": 14599
+            },
+            "npy": {
+              "path": "tmg_cat/tmg_cat_n500.npy",
+              "bytes": 12128
+            }
+          },
+          "raw_bytes_xyz_f32": 6000,
+          "raw_bytes_xyz_normals_f32": 12000
+        },
+        "2048": {
+          "files": {
+            "ply": {
+              "path": "tmg_cat/tmg_cat_n2048.ply",
+              "bytes": 98508
+            },
+            "xyz": {
+              "path": "tmg_cat/tmg_cat_n2048.xyz",
+              "bytes": 59987
+            },
+            "npy": {
+              "path": "tmg_cat/tmg_cat_n2048.npy",
+              "bytes": 49280
+            }
+          },
+          "raw_bytes_xyz_f32": 24576,
+          "raw_bytes_xyz_normals_f32": 49152
+        },
+        "8192": {
+          "files": {
+            "ply": {
+              "path": "tmg_cat/tmg_cat_n8192.ply",
+              "bytes": 393420
+            },
+            "xyz": {
+              "path": "tmg_cat/tmg_cat_n8192.xyz",
+              "bytes": 239871
+            },
+            "npy": {
+              "path": "tmg_cat/tmg_cat_n8192.npy",
+              "bytes": 196736
+            }
+          },
+          "raw_bytes_xyz_f32": 98304,
+          "raw_bytes_xyz_normals_f32": 196608
+        }
+      }
+    },
+    "mav2_wand": {
+      "source": "file",
+      "source_faces": 19760,
+      "source_vertices": 9883,
+      "canonical_transform": {
+        "center": [
+          -0.0033312450000000104,
+          0.00040754500000000915,
+          0.004054290000000002
+        ],
+        "scale": 0.9829863059096438
+      },
+      "reference": "mav2_wand/mav2_wand_ref.npy",
+      "clouds": {
+        "100": {
+          "files": {
+            "ply": {
+              "path": "mav2_wand/mav2_wand_n100.ply",
+              "bytes": 5003
+            },
+            "xyz": {
+              "path": "mav2_wand/mav2_wand_n100.xyz",
+              "bytes": 2939
+            },
+            "npy": {
+              "path": "mav2_wand/mav2_wand_n100.npy",
+              "bytes": 2528
+            }
+          },
+          "raw_bytes_xyz_f32": 1200,
+          "raw_bytes_xyz_normals_f32": 2400
+        },
+        "500": {
+          "files": {
+            "ply": {
+              "path": "mav2_wand/mav2_wand_n500.ply",
+              "bytes": 24203
+            },
+            "xyz": {
+              "path": "mav2_wand/mav2_wand_n500.xyz",
+              "bytes": 14754
+            },
+            "npy": {
+              "path": "mav2_wand/mav2_wand_n500.npy",
+              "bytes": 12128
+            }
+          },
+          "raw_bytes_xyz_f32": 6000,
+          "raw_bytes_xyz_normals_f32": 12000
+        },
+        "2048": {
+          "files": {
+            "ply": {
+              "path": "mav2_wand/mav2_wand_n2048.ply",
+              "bytes": 98508
+            },
+            "xyz": {
+              "path": "mav2_wand/mav2_wand_n2048.xyz",
+              "bytes": 60426
+            },
+            "npy": {
+              "path": "mav2_wand/mav2_wand_n2048.npy",
+              "bytes": 49280
+            }
+          },
+          "raw_bytes_xyz_f32": 24576,
+          "raw_bytes_xyz_normals_f32": 49152
+        },
+        "8192": {
+          "files": {
+            "ply": {
+              "path": "mav2_wand/mav2_wand_n8192.ply",
+              "bytes": 393420
+            },
+            "xyz": {
+              "path": "mav2_wand/mav2_wand_n8192.xyz",
+              "bytes": 241705
+            },
+            "npy": {
+              "path": "mav2_wand/mav2_wand_n8192.npy",
+              "bytes": 196736
+            }
+          },
+          "raw_bytes_xyz_f32": 98304,
+          "raw_bytes_xyz_normals_f32": 196608
+        }
+      }
+    },
+    "fastmesh_001": {
+      "source": "file",
+      "source_faces": 4748,
+      "source_vertices": 2405,
+      "canonical_transform": {
+        "center": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": 1.0
+      },
+      "reference": "fastmesh_001/fastmesh_001_ref.npy",
+      "clouds": {
+        "100": {
+          "files": {
+            "ply": {
+              "path": "fastmesh_001/fastmesh_001_n100.ply",
+              "bytes": 5003
+            },
+            "xyz": {
+              "path": "fastmesh_001/fastmesh_001_n100.xyz",
+              "bytes": 2928
+            },
+            "npy": {
+              "path": "fastmesh_001/fastmesh_001_n100.npy",
+              "bytes": 2528
+            }
+          },
+          "raw_bytes_xyz_f32": 1200,
+          "raw_bytes_xyz_normals_f32": 2400
+        },
+        "500": {
+          "files": {
+            "ply": {
+              "path": "fastmesh_001/fastmesh_001_n500.ply",
+              "bytes": 24203
+            },
+            "xyz": {
+              "path": "fastmesh_001/fastmesh_001_n500.xyz",
+              "bytes": 14622
+            },
+            "npy": {
+              "path": "fastmesh_001/fastmesh_001_n500.npy",
+              "bytes": 12128
+            }
+          },
+          "raw_bytes_xyz_f32": 6000,
+          "raw_bytes_xyz_normals_f32": 12000
+        },
+        "2048": {
+          "files": {
+            "ply": {
+              "path": "fastmesh_001/fastmesh_001_n2048.ply",
+              "bytes": 98508
+            },
+            "xyz": {
+              "path": "fastmesh_001/fastmesh_001_n2048.xyz",
+              "bytes": 59993
+            },
+            "npy": {
+              "path": "fastmesh_001/fastmesh_001_n2048.npy",
+              "bytes": 49280
+            }
+          },
+          "raw_bytes_xyz_f32": 24576,
+          "raw_bytes_xyz_normals_f32": 49152
+        },
+        "8192": {
+          "files": {
+            "ply": {
+              "path": "fastmesh_001/fastmesh_001_n8192.ply",
+              "bytes": 393420
+            },
+            "xyz": {
+              "path": "fastmesh_001/fastmesh_001_n8192.xyz",
+              "bytes": 239732
+            },
+            "npy": {
+              "path": "fastmesh_001/fastmesh_001_n8192.npy",
+              "bytes": 196736
+            }
+          },
+          "raw_bytes_xyz_f32": 98304,
+          "raw_bytes_xyz_normals_f32": 196608
+        }
+      }
+    }
+  }
+}

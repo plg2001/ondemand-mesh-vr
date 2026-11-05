@@ -1,0 +1,39 @@
+# third_party/TreeMeshGPT/model/treemeshgpt_inference.py, model/pc_encoder.py
+model: TreeMeshGPT
+repo: https://github.com/sail-sg/TreeMeshGPT
+license: MIT
+input: {points: 8192, normals: false}
+output: {max_faces: 5500}
+generation:
+  cond_tokens: 2048            # CloudEncoder latent queries (bidirectional prefix)
+  max_new_tokens: 30000        # max_seq_len
+  tokens_per_face: 2.0         # tree sequencing: ~22% of naive 9 tok/face (paper); real runs measure it
+  default_faces: 800
+components:
+  - name: point_encoder
+    measured_keys: [pc_encoder]
+    kind: perceiver            # single cross-attention block, 1 head, then LayerNorm+Linear(512->64)
+    n_points: 8192
+    point_dim: 51
+    width: 512
+    n_latents: 2048
+    n_layers: 0
+    ffn_mult: 4
+  - name: decoder
+    measured_keys: [decoder, heads]
+    kind: decoder_ar           # x-transformers style, GLU FFN, non-causal SDPA with KV cache
+    d_model: 1024
+    n_layers: 24
+    n_heads: 16
+    ffn_dim: 4096
+    ffn: glu
+    vocab: 130                 # head_coord1 (+ coord2/coord3 heads below)
+    head_mlp_params: 9450000   # 3 coordinate MLP heads evaluated every step (approx.)
+variants:
+  "7bit": {output: {max_faces: 5500}}
+  "9bit": {output: {max_faces: 11000}, input: {points: 4096, normals: false}}
+params_measured:
+  total: 420504514
+  decoder: 402924544
+  pc_encoder: 5311552
+  heads: 9839000

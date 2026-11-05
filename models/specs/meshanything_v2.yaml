@@ -1,0 +1,37 @@
+# Architecture spec used by mock mode and by the headset estimator.
+# Values read from the official sources (third_party/MeshAnythingV2 @ upstream.lock.json):
+#   MeshAnything/models/meshanything_v2.py, MeshAnything/miche/shapevae-256.yaml, facebook/opt-350m config.
+model: MeshAnything V2
+repo: https://github.com/buaacyw/MeshAnythingV2
+license: S-Lab License 1.0 (non-commercial)
+input: {points: 8192, normals: true}
+output: {max_faces: 1600}
+generation:
+  cond_tokens: 257             # 1 global + 256 shape latents (Michelangelo)
+  max_new_tokens: 10083        # int(1600*9*0.70 + 3 + 257) - 257
+  tokens_per_face: 4.5         # Adjacent Mesh Tokenization ~ half of 9 tok/face (paper); real runs measure it
+  default_faces: 800
+components:
+  - name: point_encoder
+    measured_keys: [point_encoder, cond_proj]
+    kind: perceiver            # Fourier embed -> cross-attn (256 queries) -> 8 self-attn layers
+    n_points: 8192
+    point_dim: 54              # 3*2*8 Fourier + 3 xyz + 3 normals
+    width: 768
+    n_latents: 257
+    n_layers: 8
+    ffn_mult: 4
+  - name: decoder
+    measured_keys: [transformer]
+    kind: decoder_ar           # OPT-350m: pre-LN=False, ReLU FFN
+    d_model: 1024
+    n_layers: 24
+    n_heads: 16
+    ffn_dim: 4096
+    ffn: relu
+    vocab: 132
+params_measured:               # exact counts, official architecture instantiated with accelerate.init_empty_weights
+  total: 500792961
+  point_encoder: 185249409       # full Michelangelo SITA-VAE (its 16 decoder layers are unused at inference)
+  transformer: 313182208
+  cond_proj: 1573888

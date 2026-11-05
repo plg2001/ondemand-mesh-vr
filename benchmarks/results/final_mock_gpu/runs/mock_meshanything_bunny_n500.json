@@ -1,0 +1,364 @@
+{
+  "run_id": "c7774aaddb",
+  "timestamp": "2026-11-05T13:40:47",
+  "model": "meshanything",
+  "model_display": "MeshAnything V2",
+  "variant": "default",
+  "device": "cuda",
+  "device_name": "NVIDIA GeForce GT 1030",
+  "precision": "fp16",
+  "status": "ok",
+  "args": {
+    "model": "meshanything",
+    "variant": null,
+    "points": 500,
+    "input": null,
+    "shape": "bunny",
+    "mode": "mock",
+    "device": "cuda",
+    "precision": "auto",
+    "attn": "auto",
+    "normals": "auto",
+    "upsample": "repeat",
+    "max_new_tokens": null,
+    "max_seq_len": null,
+    "time_budget_s": null,
+    "assume_faces": null,
+    "surrogate_layers": 2,
+    "repeats": 1,
+    "warmup": 0,
+    "seed": 0,
+    "quality": false,
+    "force": false,
+    "no_export": false,
+    "formats": [
+      "obj",
+      "glb"
+    ],
+    "out_dir": "data/outputs",
+    "json_out": "benchmarks\\results\\final_mock_gpu\\runs\\mock_meshanything_bunny_n500.json",
+    "csv_out": "benchmarks\\results\\final_mock_gpu\\results.csv",
+    "quiet": true
+  },
+  "upstream": {
+    "dir": "third_party/MeshAnythingV2",
+    "url": "https://github.com/buaacyw/MeshAnythingV2.git",
+    "commit": "461d3b6ed750ab3443281b2e4a0e30e8ee98097e"
+  },
+  "input": {
+    "input_points": 500,
+    "model_points": 8192,
+    "resample": "up-repeat",
+    "duplication_factor": 16.38,
+    "path": "data/inputs/bunny/bunny_n500.ply",
+    "normals_source": "file",
+    "storage_bytes_xyz_f32": 6000,
+    "file_bytes": 24203,
+    "preprocess_s": 1.0024888000007195,
+    "shape": "bunny",
+    "normalizer": {
+      "name": "meshanything_v2",
+      "center": [
+        0.0020030438899993896,
+        -0.015565752983093262,
+        0.0005583316087722778
+      ],
+      "scale": 2.007144881168295
+    }
+  },
+  "preflight": {
+    "repo_available": true,
+    "weights": "~/.cache/huggingface/hub/models--Yiwen-ntu--meshanythingv2/snapshots/eaa7704d9d0c58456ab415e880e3fb82db9b3c81/model.safetensors",
+    "required_bytes_estimate": 2899173124.0,
+    "free_bytes": 1717678695
+  },
+  "mode": "mock",
+  "attn_backend": "sdpa-shim",
+  "params": {
+    "analytic_total": 500792961,
+    "official_architecture_meta": {
+      "total": 500792961,
+      "point_encoder": 185249409,
+      "transformer": 313182208,
+      "cond_head_proj": 787456,
+      "cond_proj": 1573888
+    }
+  },
+  "flops": {
+    "total": 3123847225344.0,
+    "by_component": {
+      "point_encoder": 60233637888.0,
+      "decoder": 3063613587456.0
+    },
+    "decode_step_at_cond_analytic": 630054912.0,
+    "decode_step_at_cond_flopcounter_meta": 629612544.0
+  },
+  "memory_theoretical": {
+    "weights_bytes": {
+      "fp32": 2003171844.0,
+      "fp16": 1001585922.0,
+      "bf16": 1001585922.0,
+      "int8": 500792961.0,
+      "int4": 250396480.5
+    },
+    "kv_cache_peak_bytes": {
+      "fp32": 758317056.0,
+      "fp16": 379158528.0,
+      "bf16": 379158528.0,
+      "int8": 189579264.0,
+      "int4": 94789632.0
+    },
+    "kv_bytes_per_token": {
+      "fp32": 196608.0,
+      "fp16": 98304.0,
+      "bf16": 98304.0,
+      "int8": 49152.0,
+      "int4": 24576.0
+    },
+    "activation_bytes_fp16": 8421376.0,
+    "required_on_device_bytes": 2899173124.0
+  },
+  "mesh": {
+    "assumed_faces": 800,
+    "decode_steps_assumed": 3600
+  },
+  "timings": {
+    "analysis_s": 2.482463899999857,
+    "surrogate": {
+      "layers_run": 2,
+      "ms_per_step_measured": 2.3569000004499685,
+      "ms_per_layer": 1.1704999997164123,
+      "ms_fixed_per_step": 0.01590000101714395,
+      "ms_per_step_full_depth": 28.10789999421104,
+      "context_at_measure": 293,
+      "device": "cuda",
+      "dtype": "torch.float16",
+      "peak_vram_mb": 66.44921875,
+      "extrapolated_decode_s": 101.18843997915974
+    }
+  },
+  "workload": {
+    "params_total": 500792961,
+    "flops_total": 3123847225344.0,
+    "flops_by_component": {
+      "point_encoder": 60233637888.0,
+      "decoder": 3063613587456.0
+    },
+    "decode_steps": 3600,
+    "cond_tokens": 257,
+    "kv_bytes_per_token": {
+      "fp32": 196608.0,
+      "fp16": 98304.0,
+      "bf16": 98304.0,
+      "int8": 49152.0,
+      "int4": 24576.0
+    },
+    "weights_bytes": {
+      "fp32": 2003171844.0,
+      "fp16": 1001585922.0,
+      "bf16": 1001585922.0,
+      "int8": 500792961.0,
+      "int4": 250396480.5
+    },
+    "peak_kv_bytes": {
+      "fp32": 758317056.0,
+      "fp16": 379158528.0,
+      "bf16": 379158528.0,
+      "int8": 189579264.0,
+      "int4": 94789632.0
+    },
+    "decoder": {
+      "d_model": 1024,
+      "n_layers": 24,
+      "n_heads": 16,
+      "ffn_dim": 4096,
+      "vocab": 132,
+      "params": 313182208,
+      "ffn": "relu",
+      "head_mlp_params": 0
+    },
+    "one_shot_flops": 60233637888.0,
+    "activation_bytes_fp16": 8421376.0
+  },
+  "headset": {
+    "headsets": {
+      "quest2": {
+        "nominal_fp16": {
+          "device": "quest2",
+          "label": "Meta Quest 2 (Snapdragon XR2 Gen 1, Adreno 650)",
+          "precision": "fp16",
+          "case": "nominal",
+          "memory": {
+            "weights": 1001585922.0,
+            "kv_cache": 379158528.0,
+            "activations": 8421376.0,
+            "runtime": 400000000,
+            "total": 1789165826.0
+          },
+          "memory_budget_bytes": 4724464025,
+          "fits_memory": true,
+          "latency_s": 218.94635190239197,
+          "decode_s": 218.84391374271848,
+          "one_shot_s": 0.10243815967346939,
+          "energy_j": 1313.6781114143519,
+          "battery_pct_per_mesh": 2.60650418931419,
+          "meshes_per_charge": 38.36556273723522,
+          "frames_stalled": 19705.171671215277
+        },
+        "best_int4": {
+          "device": "quest2",
+          "label": "Meta Quest 2 (Snapdragon XR2 Gen 1, Adreno 650)",
+          "precision": "int4",
+          "case": "best",
+          "memory": {
+            "weights": 250396480.5,
+            "kv_cache": 379158528.0,
+            "activations": 8421376.0,
+            "runtime": 400000000,
+            "total": 1037976384.5
+          },
+          "memory_budget_bytes": 4724464025,
+          "fits_memory": true,
+          "latency_s": 33.67991155132275,
+          "decode_s": 33.60023742713228,
+          "one_shot_s": 0.07967412419047619,
+          "energy_j": 134.719646205291,
+          "battery_pct_per_mesh": 0.26730088532795837,
+          "meshes_per_charge": 374.1102461269719,
+          "frames_stalled": 3031.1920396190476
+        },
+        "worst_fp16": {
+          "device": "quest2",
+          "label": "Meta Quest 2 (Snapdragon XR2 Gen 1, Adreno 650)",
+          "precision": "fp16",
+          "case": "worst",
+          "memory": {
+            "weights": 1001585922.0,
+            "kv_cache": 379158528.0,
+            "activations": 8421376.0,
+            "runtime": 400000000,
+            "total": 1789165826.0
+          },
+          "memory_budget_bytes": 4724464025,
+          "fits_memory": true,
+          "latency_s": 328.1248926633487,
+          "decode_s": 327.9814792398058,
+          "one_shot_s": 0.14341342354285713,
+          "energy_j": 2624.9991413067896,
+          "battery_pct_per_mesh": 5.208331629576964,
+          "meshes_per_charge": 19.200006280729536,
+          "frames_stalled": 29531.240339701384
+        }
+      },
+      "quest3s": {
+        "nominal_fp16": {
+          "device": "quest3s",
+          "label": "Meta Quest 3S (Snapdragon XR2 Gen 2, Adreno 740)",
+          "precision": "fp16",
+          "case": "nominal",
+          "memory": {
+            "weights": 1001585922.0,
+            "kv_cache": 379158528.0,
+            "activations": 8421376.0,
+            "runtime": 400000000,
+            "total": 1789165826.0
+          },
+          "memory_budget_bytes": 6174015488,
+          "fits_memory": true,
+          "latency_s": 146.58545394068028,
+          "decode_s": 146.5444786768109,
+          "one_shot_s": 0.04097526386938776,
+          "energy_j": 1026.098177584762,
+          "battery_pct_per_mesh": 1.7026718730664445,
+          "meshes_per_charge": 58.73122213495191,
+          "frames_stalled": 13192.690854661225
+        },
+        "best_int4": {
+          "device": "quest3s",
+          "label": "Meta Quest 3S (Snapdragon XR2 Gen 2, Adreno 740)",
+          "precision": "int4",
+          "case": "best",
+          "memory": {
+            "weights": 250396480.5,
+            "kv_cache": 379158528.0,
+            "activations": 8421376.0,
+            "runtime": 400000000,
+            "total": 1037976384.5
+          },
+          "memory_budget_bytes": 6174015488,
+          "fits_memory": true,
+          "latency_s": 28.6905086205291,
+          "decode_s": 28.658638970852913,
+          "one_shot_s": 0.03186964967619048,
+          "energy_j": 143.4525431026455,
+          "battery_pct_per_mesh": 0.23804019497983128,
+          "meshes_per_charge": 420.09711850753956,
+          "frames_stalled": 2582.145775847619
+        },
+        "worst_fp16": {
+          "device": "quest3s",
+          "label": "Meta Quest 3S (Snapdragon XR2 Gen 2, Adreno 740)",
+          "precision": "fp16",
+          "case": "worst",
+          "memory": {
+            "weights": 1001585922.0,
+            "kv_cache": 379158528.0,
+            "activations": 8421376.0,
+            "runtime": 400000000,
+            "total": 1789165826.0
+          },
+          "memory_budget_bytes": 6174015488,
+          "fits_memory": true,
+          "latency_s": 255.05195239619053,
+          "decode_s": 254.9802456844191,
+          "one_shot_s": 0.07170671177142857,
+          "energy_j": 2295.467571565715,
+          "battery_pct_per_mesh": 3.8090195997041603,
+          "meshes_per_charge": 26.253474780693388,
+          "frames_stalled": 22954.675715657148
+        }
+      }
+    },
+    "offload": {
+      "edge": "edge_rtx4090",
+      "link": "wifi6_local_edge",
+      "edge_compute_s": 18.34851091670057,
+      "network_s": 0.0055580000000000004,
+      "total_s": 18.35406891670057,
+      "headset_radio_energy_j": 0.0055580000000000004,
+      "upload_bytes": 6000,
+      "download_bytes": 15900.0
+    }
+  },
+  "system": {
+    "os": "Windows 10 (10.0.26300)",
+    "python": "3.11.0",
+    "torch": "2.7.1+cu118",
+    "cpu": "Intel(R) Core(TM) i5-9400 CPU @ 2.90GHz",
+    "cpu_cores_physical": 6,
+    "cpu_threads": 6,
+    "torch_threads": 6,
+    "ram_total_bytes": 8524222464,
+    "ram_available_bytes_at_start": 1515577344,
+    "cuda_available": true,
+    "transformers": "4.43.0",
+    "gpu": "NVIDIA GeForce GT 1030",
+    "gpu_compute_capability": "6.1",
+    "gpu_total_bytes": 2147352576,
+    "cuda_runtime": "11.8",
+    "cuda_arch_list": [
+      "sm_37",
+      "sm_50",
+      "sm_60",
+      "sm_61",
+      "sm_70",
+      "sm_75",
+      "sm_80",
+      "sm_86",
+      "sm_90",
+      "compute_37"
+    ],
+    "gpu_driver": "582.66",
+    "repo_commit": "1310f62e765873296daaaee91b96202ae7c33fc7"
+  }
+}

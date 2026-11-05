@@ -1,0 +1,54 @@
+{
+  "repos": {
+    "treemeshgpt": {
+      "dir": "third_party/TreeMeshGPT",
+      "url": "https://github.com/sail-sg/TreeMeshGPT.git",
+      "commit": "35821582ac14090f2a9cb173e4ea5fa022ca760a"
+    },
+    "meshanything": {
+      "dir": "third_party/MeshAnythingV2",
+      "url": "https://github.com/buaacyw/MeshAnythingV2.git",
+      "commit": "461d3b6ed750ab3443281b2e4a0e30e8ee98097e"
+    },
+    "fastmesh": {
+      "dir": "third_party/FastMesh",
+      "url": "https://github.com/jhkim0759/FastMesh.git",
+      "commit": "8e971227e48db7f277f1c30359a4d823b1a7009c"
+    }
+  },
+  "weights": {
+    "treemeshgpt_7bit": {
+      "source": "gdrive://1IERM76szBQq9oAMoFw1Sbgp3kx97_Kib",
+      "path": "checkpoints/treemeshgpt/treemeshgpt_7bit.pt",
+      "bytes": 5046434709,
+      "sha256": "de1d27d077498a5f3a30769f24d86c6cfba2ee9ef49938d6a1c816dc609cc735"
+    },
+    "Yiwen-ntu/meshanythingv2/config.json": {
+      "source": "hf://Yiwen-ntu/meshanythingv2/config.json",
+      "revision": "eaa7704d9d0c58456ab415e880e3fb82db9b3c81",
+      "bytes": 817
+    },
+    "Yiwen-ntu/meshanythingv2/model.safetensors": {
+      "source": "hf://Yiwen-ntu/meshanythingv2/model.safetensors",
+      "revision": "eaa7704d9d0c58456ab415e880e3fb82db9b3c81",
+      "bytes": 2002725684,
+      "sha256": "c7cb232f2dcede0e03921f373e659a1415bb2fb852faf1ad271803450d878ad0"
+    },
+    "facebook/opt-350m/config.json": {
+      "source": "hf://facebook/opt-350m/config.json",
+      "revision": "08ab08cc4b72ff5593870b5d527cf4230323703c",
+      "bytes": 644
+    },
+    "WopperSet/FastMesh-V1K/config.json": {
+      "source": "hf://WopperSet/FastMesh-V1K/config.json",
+      "revision": "1af8fd50a41fe7b75baa104721a38e2a3d51d35e",
+      "bytes": 480
+    },
+    "WopperSet/FastMesh-V1K/model.safetensors": {
+      "source": "hf://WopperSet/FastMesh-V1K/model.safetensors",
+      "revision": "1af8fd50a41fe7b75baa104721a38e2a3d51d35e",
+      "bytes": 4378026292,
+      "sha256": "39d028169a519cd0e5a568847be0ca6bc55ab6de4d8a08aa78c5affb9c855988"
+    }
+  }
+}
