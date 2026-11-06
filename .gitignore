@@ -16,3 +16,6 @@ benchmarks/results/tmp/
 *.glb
 *.pt
 CLAUDE.md
+# Unity project keeps its own meshes/models under unity/: do not ignore them there
+!unity/**/*.glb
+!unity/**/*.obj
