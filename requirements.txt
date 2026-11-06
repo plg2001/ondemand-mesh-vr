@@ -35,5 +35,10 @@ PyYAML>=6.0
 rich>=13.7
 pytest>=8.0
 
+# --- Edge server prototype (edge/) ---
+fastapi==0.162.0
+uvicorn==0.54.0
+httpx==0.28.1                 # FastAPI TestClient, used by tests/test_edge_server.py
+
 # Optional, Linux + NVIDIA Ampere (sm80+) only — NOT installable on Windows/Pascal:
 #   pip install flash-attn --no-build-isolation

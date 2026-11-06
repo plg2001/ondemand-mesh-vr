@@ -50,6 +50,8 @@ benchmarks/                 profiler, modello FLOPs/memoria, stimatore visore, s
   device_profiles.yaml      Quest 2, Quest 3S, GPU edge di riferimento, macchina locale (ogni valore con fonte)
   results/                  report JSON/CSV/Markdown
 docs/                       analisi dei requisiti e metodologia
+edge/                       server Edge prototipo (FastAPI): nuvola di punti in ingresso, mesh .glb in uscita
+unity/OnDemandMeshVR/       progetto Unity 6.3 (template VR): client che chiede le mesh al server e le mostra
 tests/                      test unitari (pytest)
 third_party/, checkpoints/  codice e pesi upstream (scaricati, non versionati)
                             checkpoints/huggingface/  = pesi MeshAnything V2, FastMesh, OPT (cache HF spostata qui)
@@ -190,6 +192,67 @@ python -m benchmarks.run_benchmarks --modes real --device cuda --precision fp16 
 
 Con `--attn auto` si usa flash-attn se presente e la GPU è sm80+, altrimenti lo shim SDPA. Su Linux il profiler
 legge anche l'energia: della GPU via NVML (Volta+) e della CPU via RAPL.
+
+## 8. Prototipo on-demand: server Edge + client Unity
+
+Il visore (per ora Unity sul PC, con l'XR Device Simulator) manda una nuvola di punti al server Edge, che
+risponde con la mesh ricostruita in formato `.glb`; Unity la carica a runtime.
+
+```
+Unity (EdgeMeshClient)  ── punti float32, ~24 KB ──►  server Edge (python -m edge.server)
+                                                       modello: mock (inviluppo convesso) o rete vera
+Unity (RuntimeMeshLoader) ◄──── mesh .glb ───────────  + header con i tempi di ogni fase
+```
+
+**Server** (dalla radice del repository):
+
+```powershell
+python -m edge.server                                       # backend mock: inviluppo convesso, niente pesi né GPU
+python -m edge.server --mock-delay-s 3                      # mock con 3 s di inferenza simulata per richiesta
+python -m edge.server --backend model --model meshanything  # modello vero (pesi in checkpoints/)
+python -m edge.server --backend model --model fastmesh --time-budget-s 300   # risposta 504 dopo 5 minuti
+```
+
+- Documentazione interattiva delle API, con la possibilità di provarle dal browser: http://127.0.0.1:8000/docs
+- Il backend **mock** serve a sviluppare il protocollo sul PC: risponde in pochi ms con l'inviluppo convesso dei
+  punti, nella stessa posizione e dimensione dell'oggetto. Il backend **model** carica la rete una sola volta
+  all'avvio e la riusa per ogni richiesta.
+- Le richieste vengono servite **una alla volta** (il modello occupa la GPU): quelle in attesa lo vedono in `X-Queue-Ms`.
+- Con `--host 0.0.0.0` il server è raggiungibile dagli altri dispositivi della rete (per il Quest); serve anche
+  aprire la porta nel firewall di Windows.
+
+| Endpoint | Cosa fa |
+|---|---|
+| `GET /health` | stato del server, backend e modello caricati |
+| `POST /reconstruct?format=xyz&object_id=...` | corpo = punti float32 little-endian (N×3, oppure N×6 con `format=xyzn`) → `.glb` |
+| `GET /shapes` | nuvole salvate sul server (`data/inputs/manifest.json`) |
+| `GET /shapes/{nome}/points?points=2048` | punti di una nuvola salvata sull'Edge (scenario "la scena sta sull'Edge") |
+| `GET /shapes/{nome}/mesh?points=2048` | mesh ricostruita da una nuvola salvata sull'Edge |
+
+Header della risposta, in millisecondi: `X-Queue-Ms`, `X-Preprocess-Ms`, `X-Inference-Ms`, `X-Postprocess-Ms`,
+`X-Export-Ms`, `X-Server-Ms` (totale lato server). Il client calcola rete + overhead HTTP come
+`round trip − X-Server-Ms`. Ogni richiesta è registrata anche in `benchmarks/results/tmp/edge_requests.csv`
+(cartella non versionata).
+
+**Client Unity** (`unity/OnDemandMeshVR/Assets/Scripts/`):
+
+1. Avvia il server.
+2. Sull'oggetto `MeshLoader` della scena aggiungi il componente **Edge Mesh Client** (`EdgeMeshClient.cs`): usa il
+   `RuntimeMeshLoader` dello stesso oggetto e ne disattiva il caricamento da file.
+3. Premi Play: la nuvola indicata in *Point Cloud File* (in `Assets/StreamingAssets/PointClouds/`) viene inviata al
+   server e la mesh ricevuta compare nella scena. Per ripetere la richiesta durante il Play: menu ⋮ del componente →
+   *Request mesh from edge*.
+4. Con *Source* = `UseCloudStoredOnEdge` il client non invia punti: chiede la nuvola per nome al server.
+
+La Console di Unity riporta, per ogni richiesta, i KB inviati e ricevuti, il round trip diviso in tempo del server e
+tempo di rete, e il tempo di caricamento del `.glb`. Le stesse misure vanno in `edge_timings.csv`, in
+`Application.persistentDataPath` (il percorso viene stampato nella Console alla prima richiesta).
+
+Limiti del prototipo:
+- sul PC le misure lato Unity riguardano il PC, non il Quest;
+- il progetto Unity consente HTTP non cifrato (*Allow downloads over HTTP* = *Always allowed*): accettabile in
+  una rete locale di laboratorio, non per un'app pubblicata;
+- sul Quest la lettura dei punti da `StreamingAssets` andrà adattata (su Android i file stanno dentro l'apk).
 
 ## Note e limiti noti
 
