@@ -46,6 +46,7 @@ models/                     wrapper dei modelli (NON è un package Python: vedi 
   mesh_wrappers/            wrapper per modello, shim FlashAttention-2→SDPA, I/O point cloud, export mesh
 data/inputs/                generate_pointclouds.py → nuvole .ply/.xyz/.npy da 100 a 8192 punti + manifest.json
 data/outputs/               mesh generate (.obj / .glb)
+data/scenes/                build_scene.py + demo_room.yaml → scena di più oggetti salvati come nuvole sparse
 benchmarks/                 profiler, modello FLOPs/memoria, stimatore visore, sweep, riepiloghi
   device_profiles.yaml      Quest 2, Quest 3S, GPU edge di riferimento, macchina locale (ogni valore con fonte)
   results/                  report JSON/CSV/Markdown
@@ -204,7 +205,10 @@ Unity (EdgeMeshClient)  ── punti float32, ~24 KB ──►  server Edge (pyt
 Unity (RuntimeMeshLoader) ◄──── mesh .glb ───────────  + header con i tempi di ogni fase
 ```
 
-**Server** (dalla radice del repository):
+**Server**: il modo più semplice è il doppio clic su **`start_edge_server.bat`**, nella radice del repository.
+Avvia il backend mock con 2 s di inferenza simulata per oggetto; se un server è già acceso sulla porta 8000 non ne
+apre un secondo. Si ferma con `Ctrl+C` o chiudendo la finestra. Le opzioni scritte dopo il nome sostituiscono quelle
+di default (`start_edge_server.bat --backend model --model meshanything`). Da terminale, dalla radice del repository:
 
 ```powershell
 python -m edge.server                                       # backend mock: inviluppo convesso, niente pesi né GPU
@@ -236,7 +240,7 @@ Header della risposta, in millisecondi: `X-Queue-Ms`, `X-Preprocess-Ms`, `X-Infe
 
 **Client Unity** (`unity/OnDemandMeshVR/Assets/Scripts/`):
 
-1. Avvia il server.
+1. Avvia il server (doppio clic su `start_edge_server.bat`).
 2. Sull'oggetto `MeshLoader` della scena aggiungi il componente **Edge Mesh Client** (`EdgeMeshClient.cs`): usa il
    `RuntimeMeshLoader` dello stesso oggetto e ne disattiva il caricamento da file.
 3. Premi Play: la nuvola indicata in *Point Cloud File* (in `Assets/StreamingAssets/PointClouds/`) viene inviata al
@@ -247,6 +251,32 @@ Header della risposta, in millisecondi: `X-Queue-Ms`, `X-Preprocess-Ms`, `X-Infe
 La Console di Unity riporta, per ogni richiesta, i KB inviati e ricevuti, il round trip diviso in tempo del server e
 tempo di rete, e il tempo di caricamento del `.glb`. Le stesse misure vanno in `edge_timings.csv`, in
 `Application.persistentDataPath` (il percorso viene stampato nella Console alla prima richiesta).
+
+**Scena con più oggetti** (`data/scenes/`). Una scena nasce come mesh disposte in una stanza: un file YAML elenca
+forma, posizione, rotazione e dimensione di ogni oggetto ([`data/scenes/demo_room.yaml`](data/scenes/demo_room.yaml):
+6 oggetti). Lo script, lanciato una volta sola, campiona ogni oggetto in una nuvola sparsa e scrive la descrizione
+della scena:
+
+```powershell
+python data/scenes/build_scene.py                           # demo_room: 6 oggetti x 2048 punti = 144 KB
+python data/scenes/build_scene.py --points 500              # nuvole più sparse
+```
+
+- In `data/scenes/<nome>/` (non versionata): `scene.json`, una nuvola `<id>.xyz` per oggetto e una nuvola densa di
+  riferimento `<id>_ref.npy` per le metriche di qualità.
+- `scene.json` e le nuvole `.xyz` vengono copiate in `unity/OnDemandMeshVR/Assets/StreamingAssets/Scenes/<nome>/`.
+- I punti di ogni oggetto stanno nel suo **sistema locale** (forma centrata, lato maggiore 1): sono quelli che il
+  visore conserva e invia. Posizione, rotazione e scala, come in un nodo glTF, lo collocano nella stanza. Così la
+  mesh che torna dall'Edge, anch'essa locale, si posiziona da sola.
+- Riferimento: glTF (destrorso, +Y in alto, metri). Unity converte come glTFast fa per ogni `.glb`: posizione
+  `(-x, y, z)`, rotazione `(x, -y, -z, w)`. Per questo un oggetto con x positivo nel YAML appare a sinistra in Unity.
+
+In Unity: crea un GameObject vuoto, aggiungi il componente **Point Cloud Scene** (`PointCloudScene.cs`) e assegna
+`MeshGrey` a *Mesh Material*. Al Play crea un oggetto per ogni elemento della scena (con il riquadro dell'oggetto
+visibile nella vista Scene, o nella Game con *Gizmos* attivo: grigio = solo punti, giallo = in attesa, verde = mesh
+arrivata, rosso = errore) e, con *Reconstruct All On Start*, chiede le mesh all'Edge una alla volta, dalla più vicina.
+Alla fine la Console riporta la memoria della scena come punti e come mesh ricostruite. Dal menu ⋮ del componente:
+*Reconstruct all objects* e *Remove all meshes*.
 
 Limiti del prototipo:
 - sul PC le misure lato Unity riguardano il PC, non il Quest;

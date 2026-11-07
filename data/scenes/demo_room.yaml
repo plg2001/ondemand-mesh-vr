@@ -1,0 +1,54 @@
+# Demo room for the on-demand pipeline: build it with   python data/scenes/build_scene.py
+#
+# Frame: glTF (right-handed, +Y up, metres). The XR origin of the Unity scene stands at (0, 0, 0) and looks
+# towards +Z, so z is "how far in front". Unity mirrors the X axis (as glTFast does for every .glb): an object
+# at x = +1 here appears at x = -1 in the Unity Inspector, i.e. on the left.
+#
+# Per object:
+#   id             unique name (also the name of the GameObject in Unity)
+#   shape          any shape known to data/inputs/generate_pointclouds.py (--list shows them)
+#   position       metres; with on_floor (default true) y is the floor height under the object
+#   rotation_y_deg rotation around the vertical axis (or rotation_deg: [x, y, z])
+#   size           longest side of the object, in metres
+#   points         optional, overrides points_per_object
+
+name: demo_room
+points_per_object: 2048
+reference_points: 20000
+seed: 0
+
+objects:
+  - id: box_01
+    shape: box
+    position: [0.0, 0.0, 2.6]
+    rotation_y_deg: 20
+    size: 0.8
+
+  - id: bunny_01
+    shape: bunny
+    position: [-1.0, 0.0, 2.0]
+    rotation_y_deg: 200
+    size: 0.5
+
+  - id: puppet_01
+    shape: fastmesh_001
+    position: [1.0, 0.0, 2.0]
+    rotation_y_deg: 180
+    size: 0.7
+
+  - id: sphere_01
+    shape: sphere
+    position: [-1.8, 0.0, 3.3]
+    size: 0.5
+
+  - id: cat_01
+    shape: tmg_cat
+    position: [1.8, 0.0, 3.3]
+    rotation_y_deg: 160
+    size: 0.6
+
+  - id: wand_01
+    shape: mav2_wand
+    position: [0.0, 0.0, 4.2]
+    rotation_y_deg: 90
+    size: 1.0
