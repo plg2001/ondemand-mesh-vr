@@ -8,7 +8,7 @@ using Debug = UnityEngine.Debug;
 /// <summary>
 /// Loads a .glb at runtime (instead of dragging it into the scene by hand) and logs how long it took.
 /// Two sources: a file in StreamingAssets (local test) or a byte array already in memory, which is how the
-/// mesh arrives from the edge server (see EdgeMeshClient).
+/// mesh arrives from the edge server (see EdgeMeshClient and SceneObject).
 /// </summary>
 public class RuntimeMeshLoader : MonoBehaviour
 {
@@ -19,16 +19,22 @@ public class RuntimeMeshLoader : MonoBehaviour
              "with Render Face = Both: the generated faces are not consistently oriented.")]
     public Material overrideMaterial;
 
-    [Tooltip("Where the mesh appears, relative to the world origin.")]
+    [Tooltip("Where the mesh appears, in world coordinates (ignored when Attach To This Object is ticked).")]
     public Vector3 position = new Vector3(0f, 1.3f, 2f);
+
+    [Tooltip("The mesh becomes a child of this GameObject and follows its position, rotation and scale.")]
+    public bool attachToThisObject;
 
     public bool loadOnStart = true;
 
     /// <summary>Milliseconds of the last successful load: glb parsing + GameObject creation + material.</summary>
     public double LastLoadMs { get; private set; }
 
-    /// <summary>Triangles of the last loaded mesh.</summary>
+    /// <summary>Triangles of the mesh currently shown (0 if none).</summary>
     public int LastTriangles { get; private set; }
+
+    /// <summary>Vertices of the mesh currently shown (0 if none).</summary>
+    public int LastVertices { get; private set; }
 
     GameObject _current;
     GltfImport _currentImport;  // owns the meshes of _current: disposing it frees them
@@ -76,11 +82,30 @@ public class RuntimeMeshLoader : MonoBehaviour
         return await Show(gltf, label, timer);
     }
 
+    /// <summary>Removes the mesh currently shown and frees its memory.</summary>
+    public void Clear()
+    {
+        if (_current != null)
+            Destroy(_current);
+        _currentImport?.Dispose();
+        _current = null;
+        _currentImport = null;
+        LastTriangles = LastVertices = 0;
+    }
+
     async Task<bool> Show(GltfImport gltf, string label, Stopwatch timer)
     {
         var parseMs = timer.Elapsed.TotalMilliseconds;
+        if (this == null)  // Play mode stopped while we were loading
+        {
+            gltf.Dispose();
+            return false;
+        }
         var root = new GameObject("GeneratedMesh");
-        root.transform.position = position;
+        if (attachToThisObject)
+            root.transform.SetParent(transform, false);
+        else
+            root.transform.position = position;
         if (!await gltf.InstantiateMainSceneAsync(root.transform))
         {
             Debug.LogError($"[RuntimeMeshLoader] instantiate failed for '{label}'");
@@ -88,7 +113,7 @@ public class RuntimeMeshLoader : MonoBehaviour
             gltf.Dispose();
             return false;
         }
-        if (this == null)  // Play mode stopped while we were loading
+        if (this == null)
         {
             gltf.Dispose();
             return false;
@@ -99,30 +124,29 @@ public class RuntimeMeshLoader : MonoBehaviour
                 r.sharedMaterial = overrideMaterial;
 
         // replace the previous mesh only now, so it stays visible while the new one is loading
-        if (_current != null)
-            Destroy(_current);
-        _currentImport?.Dispose();
+        Clear();
         _current = root;
         _currentImport = gltf;
 
         timer.Stop();
         LastLoadMs = timer.Elapsed.TotalMilliseconds;
-        LastTriangles = CountTriangles(root);
+        (LastTriangles, LastVertices) = CountGeometry(root);
         Debug.Log($"[RuntimeMeshLoader] loaded '{label}': parse {parseMs:F0} ms, total {LastLoadMs:F0} ms, " +
                   $"{LastTriangles} triangles");
         return true;
     }
 
-    static int CountTriangles(GameObject root)
+    static (int triangles, int vertices) CountGeometry(GameObject root)
     {
-        long indices = 0;
+        long indices = 0, vertices = 0;
         foreach (var f in root.GetComponentsInChildren<MeshFilter>())
         {
             var mesh = f.sharedMesh;
             if (mesh == null) continue;
+            vertices += mesh.vertexCount;
             for (var i = 0; i < mesh.subMeshCount; i++)
                 indices += mesh.GetIndexCount(i);
         }
-        return (int)(indices / 3);
+        return ((int)(indices / 3), (int)vertices);
     }
 }

@@ -10,6 +10,7 @@ data/inputs/**/*.ply
 data/inputs/**/*.xyz
 data/inputs/**/*.npy
 data/inputs/_sources/
+data/scenes/*/
 benchmarks/results/tmp/
 
 *.obj

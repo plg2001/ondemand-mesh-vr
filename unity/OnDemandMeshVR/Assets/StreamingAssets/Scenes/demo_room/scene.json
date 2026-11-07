@@ -1,0 +1,238 @@
+{
+  "version": 1,
+  "name": "demo_room",
+  "frame": "gltf: right-handed, +Y up, metres; points in each object's local frame; Unity = position (-x, y, z), rotation (x, -y, -z, w)",
+  "points_per_object": 2048,
+  "objects": [
+    {
+      "id": "box_01",
+      "shape": "box",
+      "points": "box_01.xyz",
+      "reference": "box_01_ref.npy",
+      "point_count": 2048,
+      "bytes_xyz_f32": 24576,
+      "position": [
+        0.0,
+        0.24,
+        2.6
+      ],
+      "rotation": [
+        0.0,
+        0.173648,
+        0.0,
+        0.984808
+      ],
+      "scale": [
+        0.8,
+        0.8,
+        0.8
+      ],
+      "local_bounds_min": [
+        -0.5,
+        -0.3,
+        -0.2
+      ],
+      "local_bounds_max": [
+        0.5,
+        0.3,
+        0.2
+      ],
+      "source_vertices": 8,
+      "source_triangles": 12,
+      "source_mesh_bytes": 240
+    },
+    {
+      "id": "bunny_01",
+      "shape": "bunny",
+      "points": "bunny_01.xyz",
+      "reference": "bunny_01_ref.npy",
+      "point_count": 2048,
+      "bytes_xyz_f32": 24576,
+      "position": [
+        -1.0,
+        0.247808,
+        2.0
+      ],
+      "rotation": [
+        0.0,
+        0.984808,
+        0.0,
+        -0.173648
+      ],
+      "scale": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "local_bounds_min": [
+        -0.5,
+        -0.495615,
+        -0.387521
+      ],
+      "local_bounds_max": [
+        0.5,
+        0.495615,
+        0.387521
+      ],
+      "source_vertices": 34834,
+      "source_triangles": 69451,
+      "source_mesh_bytes": 1251420
+    },
+    {
+      "id": "puppet_01",
+      "shape": "fastmesh_001",
+      "points": "puppet_01.xyz",
+      "reference": "puppet_01_ref.npy",
+      "point_count": 2048,
+      "bytes_xyz_f32": 24576,
+      "position": [
+        1.0,
+        0.323826,
+        2.0
+      ],
+      "rotation": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        0.7,
+        0.7,
+        0.7
+      ],
+      "local_bounds_min": [
+        -0.391019,
+        -0.462609,
+        -0.5
+      ],
+      "local_bounds_max": [
+        0.391019,
+        0.462609,
+        0.5
+      ],
+      "source_vertices": 2405,
+      "source_triangles": 4748,
+      "source_mesh_bytes": 85836
+    },
+    {
+      "id": "sphere_01",
+      "shape": "sphere",
+      "points": "sphere_01.xyz",
+      "reference": "sphere_01_ref.npy",
+      "point_count": 2048,
+      "bytes_xyz_f32": 24576,
+      "position": [
+        -1.8,
+        0.25,
+        3.3
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "local_bounds_min": [
+        -0.5,
+        -0.5,
+        -0.5
+      ],
+      "local_bounds_max": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "source_vertices": 2562,
+      "source_triangles": 5120,
+      "source_mesh_bytes": 92184
+    },
+    {
+      "id": "cat_01",
+      "shape": "tmg_cat",
+      "points": "cat_01.xyz",
+      "reference": "cat_01_ref.npy",
+      "point_count": 2048,
+      "bytes_xyz_f32": 24576,
+      "position": [
+        1.8,
+        0.254812,
+        3.3
+      ],
+      "rotation": [
+        0.0,
+        0.984808,
+        0.0,
+        0.173648
+      ],
+      "scale": [
+        0.6,
+        0.6,
+        0.6
+      ],
+      "local_bounds_min": [
+        -0.428917,
+        -0.424687,
+        -0.5
+      ],
+      "local_bounds_max": [
+        0.428917,
+        0.424687,
+        0.5
+      ],
+      "source_vertices": 35313,
+      "source_triangles": 49936,
+      "source_mesh_bytes": 1022988
+    },
+    {
+      "id": "wand_01",
+      "shape": "mav2_wand",
+      "points": "wand_01.xyz",
+      "reference": "wand_01_ref.npy",
+      "point_count": 2048,
+      "bytes_xyz_f32": 24576,
+      "position": [
+        0.0,
+        0.5,
+        4.2
+      ],
+      "rotation": [
+        0.0,
+        0.707107,
+        0.0,
+        0.707107
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "local_bounds_min": [
+        -0.209582,
+        -0.5,
+        -0.062398
+      ],
+      "local_bounds_max": [
+        0.209582,
+        0.5,
+        0.062398
+      ],
+      "source_vertices": 9883,
+      "source_triangles": 19760,
+      "source_mesh_bytes": 355716
+    }
+  ],
+  "totals": {
+    "objects": 6,
+    "points": 12288,
+    "bytes_xyz_f32": 147456,
+    "source_vertices": 85005,
+    "source_triangles": 149027,
+    "source_mesh_bytes": 2808384
+  }
+}
