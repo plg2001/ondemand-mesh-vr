@@ -664,6 +664,65 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 77e7c27b2c5525e4aa8cc9f99d654486, type: 3}
+--- !u!1 &1478764398
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1478764400}
+  - component: {fileID: 1478764399}
+  m_Layer: 0
+  m_Name: Scene
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1478764399
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1478764398}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b1b985370c09c8e4d9edb9bcf131bd75, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PointCloudScene
+  sceneFolder: Scenes/demo_room
+  meshMaterial: {fileID: 2100000, guid: 0a41307139435624a9a9419b8b526e03, type: 2}
+  pointMaterial: {fileID: 0}
+  pointSize: 0.01
+  pointColor: {r: 0.25, g: 0.8, b: 1, a: 1}
+  serverUrl: http://127.0.0.1:8000
+  timeoutSeconds: 600
+  mode: 0
+  checkIntervalSeconds: 0.1
+  viewMargin: 0.1
+  maxDistance: 15
+  releaseAfterSeconds: 3
+  cacheMeshes: 1
+  retryAfterSeconds: 10
+  logToCsv: 1
+--- !u!4 &1478764400
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1478764398}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1548251155
 GameObject:
   m_ObjectHideFlags: 0
@@ -1014,7 +1073,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1938359746
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1030,6 +1089,7 @@ MonoBehaviour:
   fileName: box_n2048_meshanything_default_cuda.glb
   overrideMaterial: {fileID: 2100000, guid: 0a41307139435624a9a9419b8b526e03, type: 2}
   position: {x: 0, y: 1.3, z: 2}
+  attachToThisObject: 0
   loadOnStart: 1
 --- !u!4 &1938359747
 Transform:
@@ -1061,7 +1121,7 @@ MonoBehaviour:
   serverUrl: http://127.0.0.1:8000
   timeoutSeconds: 600
   source: 0
-  pointCloudFile: fastmesh_001_n2048.xyz
+  pointCloudFile: PointClouds/fastmesh_001_n2048.xyz
   storedShape: box
   storedShapePoints: 2048
   requestOnStart: 1
@@ -1134,3 +1194,4 @@ SceneRoots:
   - {fileID: 2090010178}
   - {fileID: 636083385}
   - {fileID: 1938359747}
+  - {fileID: 1478764400}

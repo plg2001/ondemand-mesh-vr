@@ -271,12 +271,33 @@ python data/scenes/build_scene.py --points 500              # nuvole più sparse
 - Riferimento: glTF (destrorso, +Y in alto, metri). Unity converte come glTFast fa per ogni `.glb`: posizione
   `(-x, y, z)`, rotazione `(x, -y, -z, w)`. Per questo un oggetto con x positivo nel YAML appare a sinistra in Unity.
 
-In Unity: crea un GameObject vuoto, aggiungi il componente **Point Cloud Scene** (`PointCloudScene.cs`) e assegna
-`MeshGrey` a *Mesh Material*. Al Play crea un oggetto per ogni elemento della scena (con il riquadro dell'oggetto
-visibile nella vista Scene, o nella Game con *Gizmos* attivo: grigio = solo punti, giallo = in attesa, verde = mesh
-arrivata, rosso = errore) e, con *Reconstruct All On Start*, chiede le mesh all'Edge una alla volta, dalla più vicina.
-Alla fine la Console riporta la memoria della scena come punti e come mesh ricostruite. Dal menu ⋮ del componente:
-*Reconstruct all objects* e *Remove all meshes*.
+In Unity: crea un GameObject vuoto in posizione `(0, 0, 0)`, aggiungi il componente **Point Cloud Scene**
+(`PointCloudScene.cs`) e assegna `MeshGrey` a *Mesh Material*. Al Play crea un oggetto per ogni elemento della scena e
+ne disegna la nuvola come **punti** (segnaposto): piccoli quadratini rivolti verso la camera, colore e diametro in
+*Point Color* e *Point Size*. Con *Gizmos* attivo, il riquadro di ogni oggetto ne mostra lo stato: grigio = punti fuori
+vista, azzurro = in vista e in attesa, giallo = richiesta in corso, verde = mesh mostrata, rosso = errore.
+
+*Mode* sceglie il comportamento:
+
+| Mode | Cosa fa |
+|---|---|
+| `OnDemand` (default) | ogni *Check Interval Seconds* (0,1 s) controlla quali oggetti sono nel campo visivo della camera; chiede all'Edge solo quelli senza mesh, uno alla volta, dal più vicino, e sostituisce i punti con la mesh. Una mesh che resta fuori vista per *Release After Seconds* (3 s) viene eliminata e l'oggetto torna ai punti. Con *Cache Meshes* il `.glb` ricevuto resta in memoria: quando l'oggetto rientra in vista ricompare subito, senza nuova richiesta e senza attendere quelle in corso verso l'Edge. L'attesa misurata parte da quando l'oggetto entra in vista senza mesh e non si azzera se esce e rientra per poco |
+| `ReconstructAllOnStart` | chiede tutti gli oggetti all'avvio, dal più vicino, senza guardare il campo visivo |
+| `Manual` | niente di automatico: si usa il menu del componente |
+
+Altri parametri: *View Margin* (allarga il controllo del campo visivo, così la richiesta parte un po' prima),
+*Max Distance* (oltre questa distanza gli oggetti restano punti), *Retry After Seconds* (dopo un errore).
+Dal menu ⋮ del componente: *Reconstruct all objects*, *Remove all meshes*, *Print memory report* (oggetti in vista,
+mesh mostrate e loro triangoli, memoria dei punti e della cache).
+
+Ogni volta che una mesh compare, la Console stampa **quanto è passato da quando l'oggetto è entrato in vista**
+(la latenza percepita), quanta parte di quel tempo l'oggetto ha atteso il proprio turno e se la mesh arriva dall'Edge o
+dalla cache. Le stesse misure vanno in `ondemand_events.csv`, accanto a `edge_timings.csv` in
+`Application.persistentDataPath`.
+
+Per *Point Material* vuoto il componente crea a runtime un materiale `Universal Render Pipeline/Particles/Unlit`:
+va bene nell'editor, ma per una build sul visore conviene assegnare un materiale, perché Unity può escludere dalla
+build gli shader non usati.
 
 Limiti del prototipo:
 - sul PC le misure lato Unity riguardano il PC, non il Quest;
