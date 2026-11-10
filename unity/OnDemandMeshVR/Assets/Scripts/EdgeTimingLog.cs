@@ -59,4 +59,46 @@ public static class EdgeTimingLog
             Debug.LogWarning($"[EdgeTimingLog] cannot write {path}: {e.Message}");
         }
     }
+
+    /// <summary>One on-demand event: an object came into view and its mesh is now shown.</summary>
+    public struct OnDemandEvent
+    {
+        public string ObjectId, Source;          // Source: "edge" (new request) or "cache" (glb kept in memory)
+        public double VisibleToMeshMs;           // what the user waits: from "in view" to "mesh shown"
+        public double WaitedMs;                  // part of it spent waiting for the previous object's request
+        public double RoundTripMs, ServerMs, LoadMs;
+        public int Triangles, BytesDown, ObjectsInView, MeshesShown;
+    }
+
+    static bool _eventsPathLogged;
+
+    /// <summary>Appends to ondemand_events.csv in Application.persistentDataPath (path printed once).</summary>
+    public static void AppendOnDemand(OnDemandEvent e)
+    {
+        var path = Path.Combine(Application.persistentDataPath, "ondemand_events.csv");
+        try
+        {
+            var inv = CultureInfo.InvariantCulture;
+            var isNew = !File.Exists(path);
+            using var w = new StreamWriter(path, append: true);
+            if (isNew)
+                w.WriteLine("timestamp,object,source,visible_to_mesh_ms,waited_ms,round_trip_ms,server_ms,load_ms," +
+                            "triangles,bytes_down,objects_in_view,meshes_shown");
+            w.WriteLine(string.Join(",",
+                DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff", inv), e.ObjectId, e.Source,
+                e.VisibleToMeshMs.ToString("F1", inv), e.WaitedMs.ToString("F1", inv),
+                e.RoundTripMs.ToString("F1", inv), e.ServerMs.ToString("F1", inv), e.LoadMs.ToString("F1", inv),
+                e.Triangles.ToString(inv), e.BytesDown.ToString(inv), e.ObjectsInView.ToString(inv),
+                e.MeshesShown.ToString(inv)));
+            if (!_eventsPathLogged)
+            {
+                Debug.Log($"[EdgeTimingLog] on-demand events appended to {path}");
+                _eventsPathLogged = true;
+            }
+        }
+        catch (IOException ex)
+        {
+            Debug.LogWarning($"[EdgeTimingLog] cannot write {path}: {ex.Message}");
+        }
+    }
 }
