@@ -2,8 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Threading.Tasks;
+using UnityEngine;
 using UnityEngine.Networking;
+using Debug = UnityEngine.Debug;
 
 /// <summary>
 /// HTTP client of the edge server (edge/server.py). One instance can be shared by many objects: the server
@@ -11,6 +14,12 @@ using UnityEngine.Networking;
 /// </summary>
 public class EdgeClient
 {
+    /// <summary>
+    /// Optional file in Application.persistentDataPath whose first line replaces the server address set in the
+    /// Inspector. tools/quest/quest.py writes it on the headset, so switching between USB and Wi-Fi needs no rebuild.
+    /// </summary>
+    public const string ServerOverrideFile = "edge_server.txt";
+
     public readonly string BaseUrl;
     public readonly int TimeoutSeconds;
 
@@ -20,9 +29,34 @@ public class EdgeClient
         TimeoutSeconds = timeoutSeconds;
     }
 
+    /// <summary>The address to use: the override file if present, otherwise the Inspector value.</summary>
+    public static string ResolveUrl(string inspectorUrl)
+    {
+        var path = Path.Combine(Application.persistentDataPath, ServerOverrideFile);
+        try
+        {
+            if (File.Exists(path))
+                foreach (var raw in File.ReadAllLines(path))
+                {
+                    var line = raw.Trim();
+                    if (line.StartsWith("http://") || line.StartsWith("https://"))
+                    {
+                        Debug.Log($"[EdgeClient] server address from {path}: {line}");
+                        return line;
+                    }
+                }
+        }
+        catch (IOException e)
+        {
+            Debug.LogWarning($"[EdgeClient] cannot read {path}: {e.Message}");
+        }
+        return inspectorUrl;
+    }
+
     public class Response
     {
         public bool Ok;
+        public bool ConnectionFailed;  // the server could not be reached at all (off, wrong address, firewall)
         public string Error = "";
         public byte[] Glb;
         public int BytesUp;
@@ -32,6 +66,42 @@ public class EdgeClient
 
         /// <summary>Transfer + HTTP overhead + waiting for Unity's main thread.</summary>
         public double NetworkMs => RoundTripMs - ServerMs;
+    }
+
+    [Serializable]
+    class HealthInfo  // filled by JsonUtility
+    {
+        public string status = "";
+        public string backend = "";
+        public string model = "";
+    }
+
+    /// <summary>GET /health with a short timeout. Returns (reachable, "backend/model" or the error).</summary>
+    public async Task<(bool ok, string info)> HealthAsync(int timeoutSeconds = 3)
+    {
+        using var request = UnityWebRequest.Get($"{BaseUrl}/health");
+        request.timeout = timeoutSeconds;
+        try
+        {
+            var op = request.SendWebRequest();
+            while (!op.isDone)
+                await Task.Yield();
+        }
+        catch (InvalidOperationException e)
+        {
+            return (false, e.Message);
+        }
+        if (request.result != UnityWebRequest.Result.Success)
+            return (false, request.error);
+        try
+        {
+            var h = JsonUtility.FromJson<HealthInfo>(request.downloadHandler.text);
+            return (true, $"{h.backend}/{h.model}");
+        }
+        catch (ArgumentException)
+        {
+            return (true, "unknown backend");
+        }
     }
 
     /// <summary>POST /reconstruct: the headset sends the object's cloud (raw float32 xyz, glTF frame).</summary>
@@ -68,6 +138,7 @@ public class EdgeClient
             }
             catch (InvalidOperationException e)  // "Insecure connection not allowed"
             {
+                r.ConnectionFailed = true;
                 r.Error = e.Message + "\nUnity blocks plain http:// by default: Edit > Project Settings > Player > " +
                           "Other Settings > Allow downloads over HTTP = Always allowed";
                 return r;
@@ -79,7 +150,11 @@ public class EdgeClient
             {
                 r.Error = $"{request.error} {request.downloadHandler?.text}";
                 if (request.result == UnityWebRequest.Result.ConnectionError)
-                    r.Error += "\nIs the server running? Double-click start_edge_server.bat in the repository folder.";
+                {
+                    r.ConnectionFailed = true;
+                    r.Error += $"\nIs the server running and reachable at {BaseUrl}? On the PC: start_edge_server.bat " +
+                               "(or tools/quest/server_usb.bat / server_wifi.bat for the headset).";
+                }
                 return r;
             }
 

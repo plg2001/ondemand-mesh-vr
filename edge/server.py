@@ -244,6 +244,14 @@ def main(argv=None) -> int:
         print(f"[edge] request log: {log_csv}", flush=True)
     print(f"[edge] API docs: http://{'127.0.0.1' if args.host == '0.0.0.0' else args.host}:{args.port}/docs",
           flush=True)
+    if args.host == "0.0.0.0":
+        from edge.netinfo import lan_ipv4_addresses
+
+        addresses = lan_ipv4_addresses()
+        for ip in addresses:
+            print(f"[edge] reachable from the local network (e.g. the headset) at http://{ip}:{args.port}", flush=True)
+        if addresses:
+            print("[edge] if Windows asks, allow Python on PRIVATE networks, or the headset cannot connect", flush=True)
     app = create_app(backend, log_csv=log_csv)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info", access_log=False)
     return 0

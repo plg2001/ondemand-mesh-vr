@@ -49,10 +49,10 @@ public class RuntimeMeshLoader : MonoBehaviour
 
     public Task<bool> LoadFromStreamingAssets(string name)
     {
-        // Application.streamingAssetsPath is a plain folder on PC; on Quest (Android) it is inside the apk,
-        // where a "file://" path does not work. On the headset the meshes arrive from the server anyway.
-        var path = Path.Combine(Application.streamingAssetsPath, name);
-        return LoadFromUri("file:///" + path.Replace('\\', '/'));
+        // Application.streamingAssetsPath is a plain folder on PC (needs "file:///"); on Quest (Android) it is
+        // already a "jar:file://" URL inside the apk, which glTFast reads through UnityWebRequest.
+        var path = Path.Combine(Application.streamingAssetsPath, name).Replace('\\', '/');
+        return LoadFromUri(path.Contains("://") ? path : "file:///" + path);
     }
 
     public async Task<bool> LoadFromUri(string uri)
