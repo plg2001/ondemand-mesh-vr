@@ -52,6 +52,8 @@ benchmarks/                 profiler, modello FLOPs/memoria, stimatore visore, s
   results/                  report JSON/CSV/Markdown
 docs/                       analisi dei requisiti e metodologia
 edge/                       server Edge prototipo (FastAPI): nuvola di punti in ingresso, mesh .glb in uscita
+tools/quest/                strumenti per il Quest via cavo: verifica, server via USB o Wi-Fi, log, risultati
+                            (guida passo passo: docs/guida_quest.md)
 unity/OnDemandMeshVR/       progetto Unity 6.3 (template VR): client che chiede le mesh al server e le mostra
 tests/                      test unitari (pytest)
 third_party/, checkpoints/  codice e pesi upstream (scaricati, non versionati)
@@ -299,11 +301,23 @@ Per *Point Material* vuoto il componente crea a runtime un materiale `Universal 
 va bene nell'editor, ma per una build sul visore conviene assegnare un materiale, perché Unity può escludere dalla
 build gli shader non usati.
 
+**Sul Quest** (guida passo passo, da visore spento: [`docs/guida_quest.md`](docs/guida_quest.md)): la stessa app
+gira sul visore. I file di `StreamingAssets` si leggono anche da dentro l'`.apk`, un pannello di stato sotto la linea
+dello sguardo mostra server, oggetti e fps, e i materiali dei punti e del pannello stanno in `Assets/Resources` per
+finire sempre nella build. Gli strumenti in `tools/quest/` (doppio clic) usano `adb` di Unity:
+
+| Script | Cosa fa |
+|---|---|
+| `check_headset.bat` | visore collegato e autorizzato? Android abbastanza recente? app installata? |
+| `server_usb.bat` | il visore raggiunge il server **attraverso il cavo** (`adb reverse`), poi avvia il server |
+| `server_wifi.bat` | scrive sul visore l'indirizzo del PC in rete (`edge_server.txt` nei dati dell'app, letto all'avvio: non serve rifare la build) e avvia il server raggiungibile dal Wi-Fi |
+| `show_logs.bat` | la Console dell'app sul visore, in diretta |
+| `pull_results.bat` | copia i CSV dei tempi dal visore in `benchmarks/results/quest/<data_ora>/` |
+
 Limiti del prototipo:
-- sul PC le misure lato Unity riguardano il PC, non il Quest;
+- le misure lato Unity riguardano il dispositivo su cui gira: il PC nell'editor, il Quest nella build;
 - il progetto Unity consente HTTP non cifrato (*Allow downloads over HTTP* = *Always allowed*): accettabile in
-  una rete locale di laboratorio, non per un'app pubblicata;
-- sul Quest la lettura dei punti da `StreamingAssets` andrà adattata (su Android i file stanno dentro l'apk).
+  una rete locale di laboratorio, non per un'app pubblicata.
 
 ## Note e limiti noti
 

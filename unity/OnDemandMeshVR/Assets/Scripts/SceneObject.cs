@@ -43,6 +43,10 @@ public class SceneObject : MonoBehaviour
     public double LastSeen { get; set; } = -1;
     public double FailedAt { get; set; } = -1;
 
+    /// <summary>Error of the last failed request ("" if none) and whether the server was unreachable.</summary>
+    public string LastError { get; private set; } = "";
+    public bool LastFailureWasConnection { get; private set; }
+
     public void Init(SceneObjectEntry entry, float[] pointsGltf, Material meshMaterial, Material pointMaterial,
                      float pointSize, Color pointColor)
     {
@@ -80,9 +84,13 @@ public class SceneObject : MonoBehaviour
         if (!response.Ok)
         {
             state = State.Failed;
+            LastError = response.Error;
+            LastFailureWasConnection = response.ConnectionFailed;
             Debug.LogError($"[SceneObject] {objectId}: {response.Error}");
             return null;
         }
+        LastError = "";
+        LastFailureWasConnection = false;
         if (!await _loader.LoadFromBytes(response.Glb, objectId) || this == null)
         {
             state = State.Failed;

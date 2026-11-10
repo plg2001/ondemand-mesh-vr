@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.Networking;
 
 /// <summary>
 /// Point cloud files, the edge server's wire format and the glTF -> Unity frame conversion.
@@ -11,11 +13,29 @@ using UnityEngine;
 /// </summary>
 public static class PointCloudIO
 {
-    /// <summary>Reads an .xyz text file ("x y z" per line) into a flat array [x0, y0, z0, x1, ...].</summary>
-    public static float[] ReadXyz(string path)
+    /// <summary>
+    /// Reads a text file from StreamingAssets. On PC it is a plain folder; on Android (Quest) the files are packed
+    /// inside the .apk and can only be read with UnityWebRequest.
+    /// </summary>
+    public static async Task<string> ReadStreamingAssetTextAsync(string relativePath)
+    {
+        var path = Path.Combine(Application.streamingAssetsPath, relativePath).Replace('\\', '/');
+        if (!path.Contains("://"))
+            return File.ReadAllText(path);
+        using var request = UnityWebRequest.Get(path);
+        var op = request.SendWebRequest();
+        while (!op.isDone)
+            await Task.Yield();
+        if (request.result != UnityWebRequest.Result.Success)
+            throw new IOException($"{path}: {request.error}");
+        return request.downloadHandler.text;
+    }
+
+    /// <summary>Parses .xyz text ("x y z" per line) into a flat array [x0, y0, z0, x1, ...].</summary>
+    public static float[] ParseXyz(string text)
     {
         var values = new List<float>();
-        foreach (var raw in File.ReadLines(path))
+        foreach (var raw in text.Split('\n'))
         {
             var line = raw.Trim();
             if (line.Length == 0 || line[0] == '#')
@@ -31,6 +51,9 @@ public static class PointCloudIO
             throw new FormatException("no points in file");
         return values.ToArray();
     }
+
+    /// <summary>Reads an .xyz file from a plain path (PC only; use ReadStreamingAssetTextAsync + ParseXyz on Quest).</summary>
+    public static float[] ReadXyz(string path) => ParseXyz(File.ReadAllText(path));
 
     /// <summary>Raw float32 bytes, little-endian on PC and Quest: the request body of POST /reconstruct.</summary>
     public static byte[] ToBytes(float[] xyz)

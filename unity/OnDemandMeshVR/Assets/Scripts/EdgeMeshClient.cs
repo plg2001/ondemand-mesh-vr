@@ -88,7 +88,7 @@ public class EdgeMeshClient : MonoBehaviour
     async Task<bool> RequestMeshInternal()
     {
         var total = Stopwatch.StartNew();
-        var client = new EdgeClient(serverUrl, timeoutSeconds);
+        var client = new EdgeClient(EdgeClient.ResolveUrl(serverUrl), timeoutSeconds);
         EdgeClient.Response response;
         string label;
         var pointsSent = 0;
@@ -96,18 +96,19 @@ public class EdgeMeshClient : MonoBehaviour
 
         if (source == PointSource.SendPointsFromFile)
         {
-            var path = Path.Combine(Application.streamingAssetsPath, pointCloudFile);
             float[] xyz;
             try
             {
-                xyz = PointCloudIO.ReadXyz(path);
+                xyz = PointCloudIO.ParseXyz(await PointCloudIO.ReadStreamingAssetTextAsync(pointCloudFile));
             }
             catch (Exception e)
             {
-                Debug.LogError($"[EdgeMeshClient] cannot read {path}: {e.Message}\n" +
+                Debug.LogError($"[EdgeMeshClient] cannot read StreamingAssets/{pointCloudFile}: {e.Message}\n" +
                                "Point Cloud File is relative to Assets/StreamingAssets, e.g. PointClouds/box_n2048.xyz");
                 return false;
             }
+            if (this == null)
+                return false;
             var body = PointCloudIO.ToBytes(xyz);
             pointsSent = xyz.Length / 3;
             label = Path.GetFileNameWithoutExtension(pointCloudFile);
