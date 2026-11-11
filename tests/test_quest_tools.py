@@ -60,3 +60,38 @@ def test_apk_path_matches_the_unity_build_script():
 def test_quest_build_script_lowers_the_minimum_api_level_to_29():
     cs = (ROOT / "unity" / "OnDemandMeshVR" / "Assets" / "Editor" / "QuestBuild.cs").read_text(encoding="utf-8")
     assert "AndroidApiLevel29" in cs
+
+
+class _FakeAdb:
+    def __init__(self, outputs):
+        self.outputs = list(outputs)
+
+    def shell(self, *args):
+        return self.outputs.pop(0)
+
+
+def test_clock_offset_uses_headset_date(monkeypatch):
+    clock = iter([100.0, 100.2, 200.0, 200.1])  # PC time before/after each adb call
+    monkeypatch.setattr(quest.time, "time", lambda: next(clock))
+    off = quest.clock_offset(_FakeAdb(["114.2", "214.15"]), samples=2)
+    assert off == 14.1  # second sample: shortest round trip, midpoint 200.05
+
+
+def test_clock_offset_without_a_number_is_none():
+    assert quest.clock_offset(_FakeAdb(["date: bad format"] * 3), samples=3) is None
+
+
+def test_copy_server_rows_keeps_the_session_window(tmp_path):
+    src, dest = tmp_path / "log.csv", tmp_path / "out.csv"
+    src.write_text("timestamp,object_id\n2026-11-11T11:00:00.000,a\n2026-11-11T11:05:00.000,b\n"
+                   "2026-11-11T11:20:00.000,c\n", encoding="utf-8")
+    start = quest.dt.datetime(2026, 11, 11, 11, 1).timestamp()
+    end = quest.dt.datetime(2026, 11, 11, 11, 10).timestamp()
+    assert quest.copy_server_rows(src, dest, start, end) == 1
+    assert dest.read_text(encoding="utf-8").splitlines()[1].endswith(",b")
+
+
+def test_session_bat_files_exist():
+    for link in ("usb", "wifi"):
+        bat = (ROOT / "tools" / "quest" / f"session_{link}.bat").read_text(encoding="utf-8")
+        assert f"quest.py session {link}" in bat

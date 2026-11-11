@@ -167,13 +167,40 @@ la build in nessuno dei due casi.
 
 ---
 
+## 6bis. Sessione di misura (cavo contro Wi-Fi)
+
+Le parti 5 e 6 servono a far funzionare l'app. Per le **misure della tesi** usa invece una sessione, che fa tutto da
+sola e registra anche gli **fps** del visore (non serve rifare la build):
+
+1. Chiudi eventuali finestre del server ancora aperte. Visore acceso, **collegato al cavo** (anche per il Wi-Fi: in
+   quel caso il cavo porta solo il registro degli fps, le richieste passano dal Wi-Fi).
+2. Doppio clic su **`tools\quest\session_usb.bat`** (oppure `session_wifi.bat`). La finestra imposta il
+   collegamento, avvia il server, misura la differenza tra l'orologio del visore e quello del PC e **riavvia l'app** sul
+   visore.
+3. Indossa il visore: prima guarda la stanza con tutti gli oggetti in vista e aspetta che compaiano tutte le mesh,
+   poi girati dall'altra parte per qualche secondo e torna a guardarli (così si misura anche la cache). Ogni 10 s la
+   finestra scrive gli fps dell'app.
+4. Togli il visore **solo dopo** aver premuto **Invio** nella finestra: con il visore in standby non si disegna nulla e
+   non ci sono fps da registrare.
+5. La finestra copia tutto in `benchmarks\results\quest\<data_ora>_usb\` (o `_wifi`): i due CSV dell'app, il log del
+   server (`edge_requests.csv`, con l'indirizzo da cui arrivano le richieste: `127.0.0.1` via cavo, quello del visore
+   via Wi-Fi), `fps.csv` (una riga al secondo), `session.json` e il riassunto **`summary.md`**.
+
+Fai una sessione per ciascun collegamento, nelle stesse condizioni.
+
+---
+
 ## 7. Cosa annotare per la tesi
 
 - La **prima mesh** di ogni avvio è più lenta (avvio dell'app): va riportata a parte.
 - Confronta **cavo e Wi-Fi**: la differenza nella colonna `network_ms` è il costo della rete senza fili.
 - Nel visore, `load_ms` (caricamento del `.glb`) sarà più alto che sul PC: è la CPU del Quest.
-- I **fps** del pannello con i punti e con le mesh visibili.
+- Gli **fps** (`fps.csv` e `summary.md` della sessione) con i punti e con le mesh visibili.
 - Annota le condizioni: distanza dal router, altri dispositivi in rete, livello di batteria.
+- L'orologio del PC può essere sbagliato di qualche secondo (Windows lo sincronizza solo ogni tanto; prima delle
+  prime misure era indietro di 14 s): la sessione misura la differenza all'inizio e alla fine e il riassunto la
+  corregge, quindi non è obbligatorio sistemarlo. Se lo sistemi (*Impostazioni → Data e ora → Sincronizza ora*),
+  fallo **prima** di una sessione, non durante: se cambia a metà, `summary.md` lo segnala ed è meglio ripetere.
 
 I file in `benchmarks/results/quest/` non sono esclusi da git: committali solo quando vuoi conservarli.
 

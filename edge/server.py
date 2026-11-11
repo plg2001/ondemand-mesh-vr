@@ -50,11 +50,16 @@ DATA_INPUTS = ROOT / "data" / "inputs"
 DEFAULT_LOG = ROOT / "benchmarks" / "results" / "tmp" / "edge_requests.csv"
 LOG_FIELDS = ["timestamp", "request_id", "source", "object_id", "status", "backend", "model", "points_in",
               "bytes_in", "bytes_out", "vertices", "triangles", "queue_ms", "preprocess_ms", "inference_ms",
-              "postprocess_ms", "export_ms", "server_ms", "decode_steps", "detail"]
+              "postprocess_ms", "export_ms", "server_ms", "decode_steps", "detail", "client", "user_agent"]
 
 
 class RequestLog:
-    """One CSV row per request (git-ignored by default): raw material for the thesis tables."""
+    """One CSV row per request (git-ignored by default): raw material for the thesis tables.
+
+    `client` is the address the request came from: 127.0.0.1 for the Unity editor on this PC and for a headset
+    connected through the USB cable (adb reverse), the headset's LAN address over Wi-Fi.
+    A log written with other columns (older version) is renamed aside instead of being mixed with the new rows.
+    """
 
     def __init__(self, path: Optional[Path]):
         self.path = path
@@ -66,6 +71,13 @@ class RequestLog:
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             new = not self.path.exists()
+            if not new:
+                with self.path.open(encoding="utf-8") as f:
+                    header = f.readline().strip()
+                if header != ",".join(LOG_FIELDS):
+                    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    self.path.rename(self.path.with_name(f"{self.path.stem}_old_{stamp}{self.path.suffix}"))
+                    new = True
             with self.path.open("a", newline="", encoding="utf-8") as f:
                 w = csv.DictWriter(f, fieldnames=LOG_FIELDS, extrasaction="ignore")
                 if new:
@@ -86,13 +98,16 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
     state = {"served": 0, "started": time.time()}
     describe = backend.describe()
 
-    async def reconstruct_and_reply(xyz, normals, *, source: str, object_id: str, seed: int,
-                                    bytes_in: int) -> Response:
+    async def reconstruct_and_reply(xyz, normals, *, source: str, object_id: str, seed: int, bytes_in: int,
+                                    request: Optional[Request] = None) -> Response:
         t_received = time.perf_counter()
         request_id = uuid.uuid4().hex[:8]
         row = {"timestamp": dt.datetime.now().isoformat(timespec="milliseconds"), "request_id": request_id,
                "source": source, "object_id": object_id, "backend": describe["backend"],
                "model": describe["model"], "points_in": len(xyz), "bytes_in": bytes_in}
+        if request is not None:
+            row.update(client=request.client.host if request.client else "",
+                       user_agent=request.headers.get("user-agent", ""))
         async with model_lock:
             t_start = time.perf_counter()
             try:
@@ -174,7 +189,7 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
         return await reconstruct_and_reply(xyz, normals, source="client", object_id=object_id, seed=seed,
-                                           bytes_in=len(body))
+                                           bytes_in=len(body), request=request)
 
     @app.get("/shapes")
     async def shapes() -> dict:
@@ -192,10 +207,10 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
 
     @app.get("/shapes/{name}/mesh", response_class=Response,
              responses={200: {"content": {"model/gltf-binary": {}}, "description": "the reconstructed mesh"}})
-    async def shape_mesh(name: str, points: int = 2048, seed: int = 0) -> Response:
+    async def shape_mesh(request: Request, name: str, points: int = 2048, seed: int = 0) -> Response:
         xyz, normals, _ = load_stored_cloud(name, points)
         return await reconstruct_and_reply(xyz, normals, source="stored", object_id=f"{name}_n{points}", seed=seed,
-                                           bytes_in=0)
+                                           bytes_in=0, request=request)
 
     return app
 

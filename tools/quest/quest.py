@@ -7,16 +7,25 @@ Double-click the .bat files next to this script, or run from the repository root
     python tools/quest/quest.py wifi --serve   # the app reaches the edge server over Wi-Fi; start it on the LAN
     python tools/quest/quest.py logs           # live Unity logs of the app (Ctrl+C to stop)
     python tools/quest/quest.py pull           # copy the CSV timings from the headset to benchmarks/results/quest/
+    python tools/quest/quest.py session usb    # one measured session (usb | wifi): server, fps, results, summary
 
 USB mode uses "adb reverse": on the headset, 127.0.0.1:8000 is forwarded to this PC's port 8000, so the app's default
 address works unchanged, with no Wi-Fi and no firewall rule. It tests the pipeline, not the Wi-Fi.
 Wi-Fi mode writes this PC's LAN address into edge_server.txt in the app's data folder on the headset; the app reads it
 at start (EdgeClient.ResolveUrl), so switching between the two modes needs no rebuild.
+
+`session usb|wifi` does a whole measured session: sets the link, starts the edge server with its own log, restarts the
+app, records the headset's frame rate (VrApi lines in logcat, one per second) while you look around, and when you
+press Enter copies everything to benchmarks/results/quest/<timestamp>_<link>/ and writes summary.md
+(benchmarks/quest_report.py). In wifi mode the cable stays plugged in, but only for the fps log: the USB tunnel is
+removed, so the app's requests really travel over the Wi-Fi (the server log records the address they came from).
 """
 from __future__ import annotations
 
 import argparse
+import csv
 import datetime as dt
+import json
 import os
 import re
 import shlex
@@ -24,6 +33,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import urllib.request
 from pathlib import Path
 from typing import Optional
@@ -32,12 +43,15 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from edge.netinfo import lan_ipv4_addresses  # noqa: E402
+from benchmarks.quest_report import FPS_FIELDS, parse_vrapi_line, write_report  # noqa: E402
 
 PROJECT_SETTINGS = ROOT / "unity" / "OnDemandMeshVR" / "ProjectSettings" / "ProjectSettings.asset"
 OVERRIDE_FILE = "edge_server.txt"  # must match EdgeClient.ServerOverrideFile
 RESULT_FILES = ("edge_timings.csv", "ondemand_events.csv")
 UNITY_EDITORS = Path("C:/Program Files/Unity/Hub/Editor")
 GUIDE = "docs/guida_quest.md"
+QUEST_RESULTS = ROOT / "benchmarks" / "results" / "quest"
+SERVER_LOG = ROOT / "benchmarks" / "results" / "tmp" / "edge_requests.csv"  # edge.server's default --log-csv
 APK = ROOT / "unity" / "OnDemandMeshVR" / "Builds" / "OnDemandMeshVR.apk"  # written by Unity: Tools > Quest
 
 
@@ -267,15 +281,7 @@ def cmd_logs(adb: Adb, args) -> int:
         return 0
 
 
-def cmd_pull(adb: Adb, args) -> int:
-    if not require_device(adb):
-        return 1
-    package, _ = project_android_settings()
-    if not package:
-        print(f"Cannot read the app's package name from {PROJECT_SETTINGS}")
-        return 1
-    dest = ROOT / "benchmarks" / "results" / "quest" / dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest.mkdir(parents=True, exist_ok=True)
+def pull_files(adb: Adb, package: str, dest: Path) -> int:
     copied = 0
     for name in RESULT_FILES:
         r = adb.run("pull", f"{app_files_dir(package)}/{name}", str(dest / name))
@@ -284,10 +290,227 @@ def cmd_pull(adb: Adb, args) -> int:
             print(f"copied {name} ({(dest / name).stat().st_size} bytes)")
         else:
             print(f"{name}: not on the headset yet (no reconstruction logged?)")
+    return copied
+
+
+def cmd_pull(adb: Adb, args) -> int:
+    if not require_device(adb):
+        return 1
+    package, _ = project_android_settings()
+    if not package:
+        print(f"Cannot read the app's package name from {PROJECT_SETTINGS}")
+        return 1
+    dest = QUEST_RESULTS / dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest.mkdir(parents=True, exist_ok=True)
+    copied = pull_files(adb, package, dest)
     if not copied:
         dest.rmdir()
         return 1
     print(f"saved in {dest}")
+    return 0
+
+
+# ----------------------------------------------------------------------------- measured session
+def clock_offset(adb: Adb, samples: int = 5) -> Optional[float]:
+    """Headset clock - PC clock in seconds, from the `date` sample with the shortest adb round trip."""
+    best = None
+    for _ in range(samples):
+        t0 = time.time()
+        out = adb.shell("date", "+%s.%N")
+        t1 = time.time()
+        try:
+            headset = float(out)
+        except ValueError:
+            continue
+        if best is None or t1 - t0 < best[0]:
+            best = (t1 - t0, headset - (t0 + t1) / 2)
+    return None if best is None else round(best[1], 3)
+
+
+class FpsRecorder:
+    """Follows `adb logcat -v epoch -s VrApi` and appends one fps.csv row per FPS line, with the process name
+    (several processes log VrApi lines: the system menu at 90 Hz, the app at 72 Hz, ...)."""
+
+    def __init__(self, adb: Adb, out: Path, package: str):
+        self.adb, self.out, self.package = adb, out, package
+        self.names: dict[int, str] = {}
+        self.last_app: Optional[dict] = None
+        self.rows = 0
+        self.proc: Optional[subprocess.Popen] = None
+        self.thread: Optional[threading.Thread] = None
+
+    def process_name(self, pid: int) -> str:
+        if pid not in self.names:
+            for line in self.adb.shell("ps", "-A", "-o", "PID,NAME").splitlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 2 and parts[0].isdigit():
+                    self.names[int(parts[0])] = parts[1]
+            self.names.setdefault(pid, "?")
+        return self.names[pid]
+
+    def start(self) -> None:
+        # -T 1: start from the newest line, not from what is still in the buffer
+        self.proc = subprocess.Popen([self.adb.path, "logcat", "-T", "1", "-v", "epoch", "-s", "VrApi:I"],
+                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                                     encoding="utf-8", errors="replace")
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self) -> None:
+        with self.out.open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=FPS_FIELDS)
+            w.writeheader()
+            for line in self.proc.stdout:
+                row = parse_vrapi_line(line)
+                if row is None:
+                    continue
+                row["process"] = self.process_name(row["pid"])
+                w.writerow(row)
+                f.flush()
+                self.rows += 1
+                if row["process"] == self.package:
+                    self.last_app = row
+
+    def stop(self) -> None:
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+        if self.thread:
+            self.thread.join(timeout=5)
+
+
+def wait_for_server(url: str, seconds: float = 30) -> bool:
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if server_answers(url):
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def copy_server_rows(src: Path, dest: Path, start: float, end: float) -> int:
+    """Rows of the shared server log written during the session (PC clock)."""
+    if not src.exists():
+        return 0
+    with src.open(encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        return 0
+    keep = [r for r in rows if start <= dt.datetime.fromisoformat(r["timestamp"]).timestamp() <= end]
+    with dest.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        w.writeheader()
+        w.writerows(keep)
+    return len(keep)
+
+
+def cmd_session(adb: Adb, args) -> int:
+    serial = require_device(adb)
+    if not serial:
+        return 1
+    package, _ = project_android_settings()
+    if not package:
+        print(f"Cannot read the app's package name from {PROJECT_SETTINGS}")
+        return 1
+    if f"package:{package}" not in adb.shell("pm", "list", "packages", package).split():
+        print(f"The app {package} is not installed: run install_app.bat first.")
+        return 1
+
+    # 1. link
+    local = f"http://127.0.0.1:{args.port}"
+    if args.link == "usb":
+        r = adb.run("reverse", f"tcp:{args.port}", f"tcp:{args.port}")
+        if r.returncode != 0:
+            print(f"adb reverse failed: {r.stderr.strip()}")
+            return 1
+        adb.shell("rm", "-f", f"{app_files_dir(package)}/{OVERRIDE_FILE}")
+        host, url = "127.0.0.1", local
+        print(f"link: USB cable (adb reverse), the app uses {url}")
+    else:
+        addresses = lan_ipv4_addresses()
+        if not addresses and not args.ip:
+            print("No local network address found: is this PC connected to the Wi-Fi / LAN?")
+            return 1
+        ip = args.ip or addresses[0]
+        if len(addresses) > 1 and not args.ip:
+            print(f"This PC has several addresses ({', '.join(addresses)}): using {ip}. Use --ip to choose another.")
+        url = f"http://{ip}:{args.port}"
+        if not write_server_address(adb, url):  # also removes the USB tunnel
+            return 1
+        host = "0.0.0.0"
+        print(f"link: Wi-Fi, the app uses {url}. Keep the cable plugged in: it only carries the fps log.")
+
+    dest = QUEST_RESULTS / f"{dt.datetime.now():%Y%m%d_%H%M%S}_{args.link}"
+    dest.mkdir(parents=True, exist_ok=True)
+    offset_start = clock_offset(adb)
+    if offset_start is not None:
+        print(f"headset clock - PC clock: {offset_start:+.2f} s (stored; the summary corrects for it)")
+
+    # 2. server, with a log of its own when this session starts it
+    server_proc, server_log = None, dest / "edge_requests.csv"
+    if server_answers(local):
+        if args.link == "wifi" and not server_answers(url):
+            print("An edge server is running but only for this PC (127.0.0.1): close its window, then run this again.")
+            return 1
+        print("An edge server is already running: keeping it; its rows of this session are copied at the end.")
+    else:
+        cmd = [sys.executable, "-m", "edge.server", "--host", host, "--port", str(args.port),
+               "--log-csv", str(server_log), *shlex.split(args.server_args)]
+        print("Starting the edge server: " + " ".join(cmd[2:]))
+        server_proc = subprocess.Popen(cmd, cwd=ROOT)
+        if not wait_for_server(local, 120 if "model" in args.server_args else 30):
+            print("The edge server did not start: see the messages above.")
+            server_proc.terminate()
+            return 1
+
+    # 3. fps, then a fresh start of the app (it reads the server address at start)
+    started = time.time()
+    fps = FpsRecorder(adb, dest / "fps.csv", package)
+    fps.start()
+    if not args.no_restart:
+        adb.shell("am", "force-stop", package)
+        adb.shell("monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1")
+        print("App restarted on the headset.")
+    print("\nPut on the headset and look around the room: first all objects in view, then away and back.")
+    print("Press Enter here to end the session.\n")
+
+    stop = threading.Event()
+
+    def report_fps():
+        while not stop.wait(10):
+            row = fps.last_app
+            if row:
+                print(f"[session] {time.time() - started:4.0f} s, app fps {row['fps']}/{row['fps_target']}",
+                      flush=True)
+            else:
+                print(f"[session] {time.time() - started:4.0f} s, no fps line from the app yet "
+                      f"({fps.rows} from other processes)", flush=True)
+
+    threading.Thread(target=report_fps, daemon=True).start()
+    try:
+        input()
+    except (EOFError, KeyboardInterrupt):
+        pass
+    ended = time.time()
+    stop.set()
+    fps.stop()
+
+    # 4. results
+    offset_end = clock_offset(adb)
+    if server_proc:
+        server_proc.terminate()
+        server_proc.wait(timeout=10)
+    else:
+        print(f"copied {copy_server_rows(SERVER_LOG, server_log, started, ended)} rows of the server log")
+    pull_files(adb, package, dest)
+    model = adb.shell("getprop", "ro.product.model")
+    session = {"link": args.link, "server_url": url, "package": package, "headset": model,
+               "started_pc": started, "ended_pc": ended,
+               "clock_offset_s": {"start": offset_start, "end": offset_end},
+               "server_args": args.server_args, "app_restarted": not args.no_restart, "fps_rows": fps.rows}
+    (dest / "session.json").write_text(json.dumps(session, indent=2), encoding="utf-8")
+    out = write_report(dest)
+    print(f"\nsaved in {dest}")
+    print(f"summary: {out}")
     return 0
 
 
@@ -307,6 +530,11 @@ def main(argv=None) -> int:
             p.add_argument("--ip", default=None, help="this PC's address to give the headset (default: detected)")
     sub.add_parser("logs", help="live Unity logs from the headset")
     sub.add_parser("pull", help="copy the CSV timings from the headset")
+    p = sub.add_parser("session", help="one measured session: link, server, fps, results and summary")
+    p.add_argument("link", choices=("usb", "wifi"), help="how the app reaches the edge server")
+    p.add_argument("--server-args", default="--mock-delay-s 2", help="options for edge.server (default: mock, 2 s)")
+    p.add_argument("--ip", default=None, help="wifi: this PC's address to give the headset (default: detected)")
+    p.add_argument("--no-restart", action="store_true", help="do not restart the app at the start of the session")
     args = ap.parse_args(argv)
 
     adb_path = find_adb()
@@ -315,7 +543,7 @@ def main(argv=None) -> int:
               f"or with Meta Quest Developer Hub. See {GUIDE}")
         return 1
     commands = {"check": cmd_check, "install": cmd_install, "usb": cmd_usb, "wifi": cmd_wifi, "logs": cmd_logs,
-                "pull": cmd_pull}
+                "pull": cmd_pull, "session": cmd_session}
     return commands[args.command](Adb(adb_path), args)
 
 
