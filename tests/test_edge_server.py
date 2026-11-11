@@ -146,3 +146,21 @@ def test_log_with_old_columns_is_renamed_aside(tmp_path):
     assert path.read_text(encoding="utf-8").splitlines()[0] == ",".join(LOG_FIELDS)
     old = list(tmp_path.glob("edge_requests_old_*.csv"))
     assert len(old) == 1 and "abc" in old[0].read_text(encoding="utf-8")
+
+
+def test_objects_option_refuses_other_objects(tmp_path):
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    from edge.server import create_app
+
+    app = create_app(MockBackend(), inputs_dir=tmp_path, log_csv=tmp_path / "log.csv", verbose=False,
+                     objects={"box_01"})
+    xyz, _ = sample_box(256)
+    with TestClient(app) as c:
+        assert c.get("/health").json()["objects"] == ["box_01"]
+        refused = c.post("/reconstruct?object_id=bunny_01", content=encode_points(xyz))
+        assert refused.status_code == 409 and "not served" in refused.json()["detail"]
+        assert c.post("/reconstruct?object_id=box_01", content=encode_points(xyz)).status_code == 200
+    rows = (tmp_path / "log.csv").read_text().splitlines()
+    assert len(rows) == 2 and ",box_01," in rows[1]  # refused requests are not logged

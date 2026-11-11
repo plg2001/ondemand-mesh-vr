@@ -43,7 +43,7 @@ Misure su questo PC (i5-9400, 8 GB RAM, GeForce GT 1030 da 2 GB), report in `ben
 
 Stato sul visore: l'app è stata **provata sul Quest 2**: l'analogico difettoso non muove più nulla
 (`disableStickLocomotion`) e il comportamento è uguale a quello nel simulatore. Misure dal visore in
-`benchmarks/results/quest/` (sezioni 4.1 e 4.2: prima prova, poi cavo contro Wi-Fi con gli fps).
+`benchmarks/results/quest/` (sezioni 4.1-4.4: prima prova, cavo contro Wi-Fi con gli fps, primo modello vero).
 
 ## 4. Misure fatte con il prototipo (sul PC, backend mock da 2 s)
 
@@ -125,10 +125,48 @@ visore) via Wi-Fi.
   da quando gli oggetti sono entrati nel campo visivo, cioè da come ci si è mossi: non servono a confrontare i
   collegamenti.
 
+### 4.3 Server con un modello vero, sul PC (11 novembre, senza visore)
+
+MeshAnything V2 sulla GT 1030 (fp16, attenzione SDPA), nuvole della scena di prova inviate come fa il visore (2048
+punti float32, senza normali: le stima il server).
+
+- **Avvio del server: 44 s** la prima volta (14 s di caricamento dei pesi, il resto import di Python), 16-17 s le
+  volte dopo. La sessione aspetta il server fino a 120 s quando si usa un modello: basta.
+- **Scatola (`box_01`): 70 s** sul server (68 s di generazione, 1440 token, 2,2 s per stimare le normali), 340
+  triangoli, 6,8 KB. Ripetuta due volte con lo stesso risultato; la mesh coincide con i punti (distanza media 0,009
+  su un oggetto lungo 1). Coerente con i 74 s della Fase 1, anche con Unity aperto.
+- **Bacchetta (`wand_01`): non finisce in 5 minuti** (2971 token, poi il server risponde 504 per il limite
+  `--time-budget-s 300`). Come nella Fase 1, su questa GPU MeshAnything completa solo forme semplici.
+- Memoria della GPU: picco di 1905 MiB su 2048 (non è finita nella RAM di sistema, ma il margine è minimo con altri
+  programmi aperti). RAM libera prima dell'avvio: 1,8 GB su 8.
+- **Problema della coda trovato**: l'app serve sempre l'oggetto in vista più vicino e riprova quelli falliti dopo
+  10 s. Nella scena il coniglio e il pupazzo (2,2 m) sono più vicini della scatola (2,6 m): con un modello vero
+  fallirebbero dopo 5 minuti l'uno, verrebbero riprovati e la scatola non avrebbe mai il suo turno. Per la prova sul
+  visore il server ha ora l'opzione `--objects box_01`, che rifiuta subito gli altri oggetti (HTTP 409, non
+  registrati): restano punti senza bloccare la coda. La correzione vera va nell'app (sezione 6, punto 2).
+
+### 4.4 Primo modello vero con il visore (11 novembre, Wi-Fi)
+
+Sessione `benchmarks/results/quest/20261111_160430_wifi/` con
+`--backend model --model meshanything --time-budget-s 300 --objects box_01`, guardando la scatola.
+
+- **La scatola è comparsa sul Quest 66,9 s dopo la richiesta** (server 66,4 s di cui 64,9 s di generazione, rete
+  22 ms, caricamento del `.glb` 60 ms): la stessa mesh da 340 triangoli ottenuta sul PC. La richiesta è partita 9 s
+  dopo il riavvio dell'app.
+- **Durante i 67 s di attesa l'app è rimasta sempre a 72 fps** (67 campioni, minimo 72): la richiesta in corso non
+  pesa sul visore. Unico calo, come col mock, nel secondo dopo la mesh (61 fps).
+- Gli altri oggetti sono rimasti punti; il pannello mostrava in rosso il rifiuto del server (`<oggetto>: HTTP 409 ...
+  not served by this server`): è l'effetto atteso di `--objects`, non un errore.
+- **Misura da correggere nell'app**: `visible_to_mesh_ms` vale 34,0 s, meno della richiesta. L'attesa riparte da
+  zero se l'oggetto resta fuori vista per più di 3 s (`releaseAfterSeconds`), anche con la richiesta ancora in corso:
+  durante l'attesa lo sguardo si è spostato e il conteggio è ripartito al rientro. Con il mock da 2 s non si notava.
+  Per la tesi vale il tempo dalla richiesta alla mesh (`total_ms` in `edge_timings.csv`); l'app va corretta alla
+  prossima build (sezione 6, punto 2).
+
 ## 5. Cosa NON è stato verificato
 
-- Il **backend con un modello vero** non è mai stato provato end to end con Unity (sul PC di sviluppo MeshAnything V2
-  impiegherebbe circa 75 s per la scatola sulla GPU; con Unity aperto la memoria è al limite).
+- Il **modello vero con il visore**: provato una volta, solo MeshAnything V2 e solo sulla scatola (sezione 4.4); gli
+  altri modelli e le altre forme non finiscono in tempi utili su questa GPU.
 - **Cavo contro Wi-Fi**: c'è una sola sessione per collegamento (5 richieste dopo la prima), con il backend mock, in un
   solo posto e momento (distanza dal router non annotata). Non provati: più sessioni, distanza, rete carica, mesh più grandi dei modelli veri.
 - Il **tracciamento delle mani** (attivo nel progetto per Android).
@@ -143,10 +181,14 @@ visore) via Wi-Fi.
    (`session_usb.bat` / `session_wifi.bat`), annotando distanza dal router e altri dispositivi.
    Opzionale, alla prossima build: precaricare glTFast all'avvio con una mesh minuscola per togliere il calo di fps
    alla prima mesh, e aggiungere ai CSV dell'app il collegamento e gli fps.
-2. Ridurre la coda: priorità agli oggetti centrali o vicini e limite di richieste simultanee; opzionale un backend
-   "replay" che restituisce mesh già generate con ritardi realistici, per le dimostrazioni.
-3. Provare il backend con un modello vero (e generare la mesh completa di TreeMeshGPT); con il PC del laboratorio
-   per i numeri sulla GPU potente.
+2. Ridurre la coda (serve una build): priorità all'oggetto al centro della vista; **non riprovare a ripetizione gli
+   oggetti che hanno superato il limite di tempo** (oggi ogni 10 s, e se sono più vicini bloccano gli altri per sempre,
+   sezione 4.3); **non far ripartire l'attesa misurata** (`visible_to_mesh_ms`) mentre la richiesta dell'oggetto è
+   in corso (sezione 4.4); opzionale un backend "replay" che restituisce mesh già generate con ritardi realistici,
+   per le dimostrazioni.
+3. Modello vero con il visore: fatto per la scatola con MeshAnything V2 (sezione 4.4, comando nel README). Restano
+   gli altri modelli, la mesh completa di TreeMeshGPT e soprattutto il PC del laboratorio, per i numeri sulla GPU
+   potente con tutti gli oggetti.
 4. Misurare memoria e qualità con le mesh dei modelli, variando il numero di punti.
 5. Confronto **Edge contro inferenza sul Quest** (proposta dello studente, ancora senza risposta della relatrice):
    nel progetto c'è già il pacchetto Unity Inference Engine (`com.unity.ai.inference`).

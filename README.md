@@ -222,6 +222,7 @@ python -m edge.server                                       # backend mock: invi
 python -m edge.server --mock-delay-s 3                      # mock con 3 s di inferenza simulata per richiesta
 python -m edge.server --backend model --model meshanything  # modello vero (pesi in checkpoints/)
 python -m edge.server --backend model --model fastmesh --time-budget-s 300   # risposta 504 dopo 5 minuti
+python -m edge.server --backend model --model meshanything --objects box_01  # serve solo questi oggetti, gli altri 409
 ```
 
 - Documentazione interattiva delle API, con la possibilità di provarle dal browser: http://127.0.0.1:8000/docs
@@ -334,7 +335,9 @@ Note pratiche per le sessioni:
 - il cavo resta collegato anche nella sessione Wi-Fi: porta solo il registro degli fps, le richieste passano dal Wi-Fi;
 - premere **Invio** nella finestra **prima** di togliere il visore (in standby non ci sono fps) e non chiuderla con la
   X (i risultati si salvano dopo Invio);
-- per un modello vero: `tools\quest\session_wifi.bat --server-args "--backend model --model meshanything"`;
+- per un modello vero: `tools\quest\session_wifi.bat --server-args "--backend model --model meshanything --time-budget-s 300 --objects box_01"`.
+  Sulla GT 1030 MeshAnything V2 ricostruisce la scatola in circa 70 s e non finisce le altre forme in 5 minuti;
+  `--objects` rifiuta subito gli altri oggetti, che altrimenti, essendo più vicini, bloccherebbero la coda;
 - Wi-Fi: la prima volta Windows Defender chiede l'accesso, va consentito sulle **reti private**, e la rete del PC deve
   essere *privata* (*Impostazioni → Rete e Internet → Wi-Fi*); prova da telefono: `http://<ip del PC>:8000/health`;
 - l'orologio del PC può essere sbagliato di qualche secondo: la sessione misura la differenza col visore e il
