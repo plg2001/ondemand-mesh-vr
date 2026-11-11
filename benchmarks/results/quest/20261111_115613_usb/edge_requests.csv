@@ -1,0 +1,7 @@
+timestamp,request_id,source,object_id,status,backend,model,points_in,bytes_in,bytes_out,vertices,triangles,queue_ms,preprocess_ms,inference_ms,postprocess_ms,export_ms,server_ms,decode_steps,detail,client,user_agent
+2026-11-11T11:56:24.705,9d7f692c,client,bunny_01,ok,mock,convex-hull,2048,24576,11120,288,572,0.1,0.0,2010.1,0.0,0.8,2013.4,,,127.0.0.1,"UnityPlayer/6000.3.26f1 (UnityWebRequest/1.0, libcurl/8.20.0-DEV)"
+2026-11-11T11:56:28.269,02dad9e3,client,puppet_01,ok,mock,convex-hull,2048,24576,9068,231,458,0.0,0.0,2005.3,0.0,0.8,2006.5,,,127.0.0.1,"UnityPlayer/6000.3.26f1 (UnityWebRequest/1.0, libcurl/8.20.0-DEV)"
+2026-11-11T11:56:31.500,fd9fd6fd,client,cat_01,ok,mock,convex-hull,2048,24576,5612,135,266,0.0,0.0,2004.5,0.0,0.7,2005.5,,,127.0.0.1,"UnityPlayer/6000.3.26f1 (UnityWebRequest/1.0, libcurl/8.20.0-DEV)"
+2026-11-11T11:56:33.616,c7d0b121,client,box_01,ok,mock,convex-hull,2048,24576,4032,92,180,0.0,0.0,2004.8,0.0,0.9,2006.1,,,127.0.0.1,"UnityPlayer/6000.3.26f1 (UnityWebRequest/1.0, libcurl/8.20.0-DEV)"
+2026-11-11T11:56:35.732,9adaf5f7,client,wand_01,ok,mock,convex-hull,2048,24576,9528,244,484,0.0,0.0,2004.5,0.0,0.7,2005.5,,,127.0.0.1,"UnityPlayer/6000.3.26f1 (UnityWebRequest/1.0, libcurl/8.20.0-DEV)"
+2026-11-11T11:56:37.849,5a0f7d60,client,sphere_01,ok,mock,convex-hull,2048,24576,74452,2047,4090,0.0,0.0,2016.8,0.0,0.9,2018.0,,,127.0.0.1,"UnityPlayer/6000.3.26f1 (UnityWebRequest/1.0, libcurl/8.20.0-DEV)"

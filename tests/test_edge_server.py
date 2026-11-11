@@ -126,3 +126,23 @@ def test_stored_shapes(client):
     assert mesh.status_code == 200 and mesh.content[:4] == b"glTF"
     assert client.get("/shapes/sphere/mesh").status_code == 404
     assert client.get("/shapes/box/mesh?points=999").status_code == 404
+
+
+def test_log_records_the_client_address(client):
+    xyz, _ = sample_box(256)
+    client.post("/reconstruct?object_id=box", content=encode_points(xyz), headers={"User-Agent": "UnityPlayer/6000"})
+    import csv as _csv
+
+    rows = list(_csv.DictReader((client.tmp_path / "log.csv").open(encoding="utf-8")))
+    assert rows[-1]["client"] == "testclient" and rows[-1]["user_agent"] == "UnityPlayer/6000"
+
+
+def test_log_with_old_columns_is_renamed_aside(tmp_path):
+    from edge.server import LOG_FIELDS, RequestLog
+
+    path = tmp_path / "edge_requests.csv"
+    path.write_text("timestamp,request_id\n2026-11-10T16:45:39,abc\n", encoding="utf-8")
+    RequestLog(path).write({"timestamp": "2026-11-11T11:00:00", "request_id": "new"})
+    assert path.read_text(encoding="utf-8").splitlines()[0] == ",".join(LOG_FIELDS)
+    old = list(tmp_path.glob("edge_requests_old_*.csv"))
+    assert len(old) == 1 and "abc" in old[0].read_text(encoding="utf-8")

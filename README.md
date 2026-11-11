@@ -238,7 +238,9 @@ python -m edge.server --backend model --model fastmesh --time-budget-s 300   # r
 Header della risposta, in millisecondi: `X-Queue-Ms`, `X-Preprocess-Ms`, `X-Inference-Ms`, `X-Postprocess-Ms`,
 `X-Export-Ms`, `X-Server-Ms` (totale lato server). Il client calcola rete + overhead HTTP come
 `round trip − X-Server-Ms`. Ogni richiesta è registrata anche in `benchmarks/results/tmp/edge_requests.csv`
-(cartella non versionata).
+(cartella non versionata), con l'indirizzo da cui è arrivata (`client`: `127.0.0.1` per l'editor e per il visore via
+cavo, l'indirizzo del visore via Wi-Fi). Un log con le colonne di una versione precedente viene rinominato
+(`edge_requests_old_<data>.csv`) invece di essere mescolato alle righe nuove.
 
 **Client Unity** (`unity/OnDemandMeshVR/Assets/Scripts/`):
 
@@ -317,6 +319,10 @@ clic) usano `adb` di Unity:
 | `server_wifi.bat` | scrive sul visore l'indirizzo del PC in rete (`edge_server.txt` nei dati dell'app, letto all'avvio: non serve rifare la build) e avvia il server raggiungibile dal Wi-Fi |
 | `show_logs.bat` | la Console dell'app sul visore, in diretta |
 | `pull_results.bat` | copia i CSV dei tempi dal visore in `benchmarks/results/quest/<data_ora>/` |
+| `session_usb.bat`, `session_wifi.bat` | una sessione di misura completa: collegamento, server con un log suo, riavvio dell'app, fps registrati dal visore; premendo Invio copia tutto in `benchmarks/results/quest/<data_ora>_usb` (o `_wifi`) e scrive `summary.md` |
+
+Il riassunto si può rigenerare, anche per le cartelle vecchie, con
+`python -m benchmarks.quest_report benchmarks/results/quest/<cartella>`.
 
 Limiti del prototipo:
 - le misure lato Unity riguardano il dispositivo su cui gira: il PC nell'editor, il Quest nella build;

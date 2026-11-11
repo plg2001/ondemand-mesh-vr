@@ -1,0 +1,15 @@
+{
+  "link": "usb",
+  "server_url": "http://127.0.0.1:8000",
+  "package": "com.DefaultCompany.VRTemplate",
+  "headset": "Quest 2",
+  "started_pc": 1794394577.9366364,
+  "ended_pc": 1794394618.6411104,
+  "clock_offset_s": {
+    "start": 0.06,
+    "end": 0.061
+  },
+  "server_args": "--mock-delay-s 2",
+  "app_restarted": true,
+  "fps_rows": 46
+}
