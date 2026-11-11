@@ -2,7 +2,7 @@
 
 Riassunto per riprendere il lavoro, per te e per chi apre una nuova conversazione con l'assistente. Descrive **dove
 siamo, cosa è stato misurato, cosa non è stato verificato e cosa resta da fare**. Come è fatto il codice è in
-`CLAUDE.md` (architettura) e `README.md` (uso); la procedura per il Quest è in [guida_quest.md](guida_quest.md).
+`CLAUDE.md` (architettura) e `README.md` (uso; il Quest è nella sezione 8).
 
 ## 1. Obiettivo (dalle risposte della relatrice, Claudia)
 
@@ -140,7 +140,7 @@ visore) via Wi-Fi.
 ## 6. Da fare (in ordine suggerito)
 
 1. Cavo contro Wi-Fi: primo confronto fatto (sezione 4.2). Per numeri da tesi ripetere 3 sessioni per collegamento
-   (`session_usb.bat` / `session_wifi.bat`, guida parte 6bis), annotando distanza dal router e altri dispositivi.
+   (`session_usb.bat` / `session_wifi.bat`), annotando distanza dal router e altri dispositivi.
    Opzionale, alla prossima build: precaricare glTFast all'avvio con una mesh minuscola per togliere il calo di fps
    alla prima mesh, e aggiungere ai CSV dell'app il collegamento e gli fps.
 2. Ridurre la coda: priorità agli oggetti centrali o vicini e limite di richieste simultanee; opzionale un backend
