@@ -90,7 +90,9 @@ def _ms(x: Optional[float]) -> str:
 
 
 def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] = DEFAULT_LOG,
-               verbose: bool = True) -> FastAPI:
+               verbose: bool = True, objects: Optional[set[str]] = None) -> FastAPI:
+    """objects: if given, POST /reconstruct serves only these object ids and refuses the others at once (HTTP 409,
+    not logged), so that on a slow edge the client's queue is not blocked by objects that cannot finish."""
     app = FastAPI(title="ondemand-mesh-vr edge server", version="0.1.0",
                   description="Sparse point cloud in, reconstructed mesh (.glb) out.")
     model_lock = asyncio.Lock()  # one reconstruction at a time: the model owns the GPU
@@ -176,13 +178,17 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
     @app.get("/health")
     async def health() -> dict:
         return {"status": "ok", **describe, "requests_served": state["served"],
-                "uptime_s": round(time.time() - state["started"], 1)}
+                "uptime_s": round(time.time() - state["started"], 1),
+                "objects": sorted(objects) if objects is not None else "all"}
 
     @app.post("/reconstruct", response_class=Response,
               responses={200: {"content": {"model/gltf-binary": {}}, "description": "the reconstructed mesh"}})
     async def reconstruct(request: Request, fmt: str = Query("xyz", alias="format"), object_id: str = "",
                           seed: int = 0) -> Response:
         """Body: the point cloud as raw little-endian float32 (N x 3, or N x 6 with format=xyzn)."""
+        if objects is not None and object_id not in objects:
+            raise HTTPException(409, f"object {object_id!r} is not served by this server "
+                                     f"(--objects {','.join(sorted(objects))})")
         body = await request.body()
         try:
             xyz, normals = decode_points(body, fmt)
@@ -235,6 +241,9 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--log-csv", type=Path, default=DEFAULT_LOG, help="per-request CSV log")
     p.add_argument("--no-log", action="store_true", help="do not write the CSV log")
+    p.add_argument("--objects", default=None,
+                   help="comma-separated object ids to serve (e.g. box_01); the others are refused at once, so a "
+                        "slow model does not block the client's queue with objects it cannot finish")
     return p.parse_args(argv)
 
 
@@ -267,7 +276,10 @@ def main(argv=None) -> int:
             print(f"[edge] reachable from the local network (e.g. the headset) at http://{ip}:{args.port}", flush=True)
         if addresses:
             print("[edge] if Windows asks, allow Python on PRIVATE networks, or the headset cannot connect", flush=True)
-    app = create_app(backend, log_csv=log_csv)
+    objects = {o.strip() for o in args.objects.split(",") if o.strip()} if args.objects else None
+    if objects:
+        print(f"[edge] serving only: {', '.join(sorted(objects))} (other objects are refused at once)", flush=True)
+    app = create_app(backend, log_csv=log_csv, objects=objects)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info", access_log=False)
     return 0
 

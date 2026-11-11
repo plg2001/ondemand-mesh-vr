@@ -1,0 +1,2 @@
+timestamp,request_id,source,object_id,status,backend,model,points_in,bytes_in,bytes_out,vertices,triangles,queue_ms,preprocess_ms,inference_ms,postprocess_ms,export_ms,server_ms,decode_steps,detail,client,user_agent
+2026-11-11T16:05:05.895,95b187dc,client,box_01,ok,model,meshanything,2048,24576,6912,176,340,0.1,1401.2,64892.7,54.4,0.7,66350.8,1440,,192.168.1.28,"UnityPlayer/6000.3.26f1 (UnityWebRequest/1.0, libcurl/8.20.0-DEV)"
