@@ -49,7 +49,7 @@ PROJECT_SETTINGS = ROOT / "unity" / "OnDemandMeshVR" / "ProjectSettings" / "Proj
 OVERRIDE_FILE = "edge_server.txt"  # must match EdgeClient.ServerOverrideFile
 RESULT_FILES = ("edge_timings.csv", "ondemand_events.csv")
 UNITY_EDITORS = Path("C:/Program Files/Unity/Hub/Editor")
-GUIDE = "docs/guida_quest.md"
+GUIDE = "README.md, section 8"
 QUEST_RESULTS = ROOT / "benchmarks" / "results" / "quest"
 SERVER_LOG = ROOT / "benchmarks" / "results" / "tmp" / "edge_requests.csv"  # edge.server's default --log-csv
 APK = ROOT / "unity" / "OnDemandMeshVR" / "Builds" / "OnDemandMeshVR.apk"  # written by Unity: Tools > Quest
@@ -161,7 +161,7 @@ def cmd_install(adb: Adb, args) -> int:
     apk = Path(args.apk) if args.apk else APK
     if not apk.exists():
         print(f"APK not found: {apk}")
-        print("Build it in Unity first: Tools > Quest > Prepare and build APK (guide, part 4).")
+        print("Build it in Unity first: Tools > Quest > Prepare and build APK.")
         return 1
     if not require_device(adb):
         return 1
@@ -225,7 +225,7 @@ def cmd_wifi(adb: Adb, args) -> int:
         return 1
     print(f"Network test without the headset: from a phone on the same Wi-Fi open {url}/health")
     print("  if it shows {\"status\":\"ok\", ...} the headset will reach the server too; if it does not load,")
-    print("  check the Windows firewall and that the Wi-Fi is a PRIVATE network (see the guide, part 6).")
+    print("  check the Windows firewall and that the Wi-Fi is a PRIVATE network.")
     return serve(args, "0.0.0.0", lan_url=url) if args.serve else 0
 
 

@@ -175,7 +175,7 @@ public static class QuestBuild
                     (run
                         ? "\n\nUnity ha provato a installarla sul visore. Se il visore non era collegato e acceso, " +
                           "non è stata installata: usa tools\\quest\\install_app.bat (controlla anche la Console)."
-                        : "\n\nOra puoi installarla sul visore: tools\\quest\\install_app.bat (guida, parte 5)."),
+                        : "\n\nOra puoi installarla sul visore: tools\\quest\\install_app.bat."),
                     "Apri la cartella", "Chiudi"))
                 EditorUtility.RevealInFinder(output);
             return;

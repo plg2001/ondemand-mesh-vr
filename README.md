@@ -3,14 +3,18 @@
 Ricostruzione **on-demand** di mesh 3D da point cloud sparse per visori VR standalone
 (Meta Quest 2 / Quest 3S) tramite inferenza assistita da un nodo **Edge**.
 
-**Fase 1 (questo repository)**:
+**Fase 1, costo dei modelli** (sezioni 1-7):
 - integrazione di tre modelli generativi point-cloud→mesh dello stato dell'arte:
   [MeshAnything V2](https://github.com/buaacyw/MeshAnythingV2), [FastMesh](https://github.com/jhkim0759/FastMesh)
   e [TreeMeshGPT](https://github.com/sail-sg/TreeMeshGPT);
 - una suite di benchmark che misura latenza, memoria e dimensione della mesh prodotta;
 - una stima della fattibilità sul SoC dei visori, che motiva l'offloading sull'Edge.
 
-Documentazione tecnica:
+**Fase 2, prototipo on demand** (sezione 8): server Edge, app Unity per il Quest 2 che chiede la mesh di un oggetto
+quando entra nel campo visivo, strumenti per misurare le sessioni sul visore.
+
+Documentazione:
+- [`docs/stato_progetto.md`](docs/stato_progetto.md): **da leggere per primo**. Dove siamo, cosa è stato misurato, cosa non è verificato, cosa resta da fare.
 - [`docs/requisiti_calcolo.md`](docs/requisiti_calcolo.md): analisi di VRAM/RAM, banda, FLOPs ed energia, e incompatibilità con ARM64/Horizon OS.
 - [`docs/metodologia_benchmark.md`](docs/metodologia_benchmark.md): come si misura, le formule di stima e i limiti.
 - [`docs/risultati_benchmark.md`](docs/risultati_benchmark.md): tabelle generate dai report in `benchmarks/results/final_*`.
@@ -49,11 +53,12 @@ data/outputs/               mesh generate (.obj / .glb)
 data/scenes/                build_scene.py + demo_room.yaml → scena di più oggetti salvati come nuvole sparse
 benchmarks/                 profiler, modello FLOPs/memoria, stimatore visore, sweep, riepiloghi
   device_profiles.yaml      Quest 2, Quest 3S, GPU edge di riferimento, macchina locale (ogni valore con fonte)
-  results/                  report JSON/CSV/Markdown
-docs/                       analisi dei requisiti e metodologia
+  quest_report.py           riassunto di una sessione sul Quest (rete, caricamento, coda, fps)
+  results/                  report JSON/CSV/Markdown: final_* = Fase 1, quest/ = sessioni sul visore
+docs/                       stato del progetto, analisi dei requisiti, metodologia, risultati
 edge/                       server Edge prototipo (FastAPI): nuvola di punti in ingresso, mesh .glb in uscita
-tools/quest/                strumenti per il Quest via cavo: verifica, server via USB o Wi-Fi, log, risultati
-                            (guida passo passo: docs/guida_quest.md)
+tools/quest/                strumenti per il Quest (doppio clic): verifica, installazione, sessioni di misura,
+                            server via cavo o Wi-Fi, log (vedi sezione 8)
 unity/OnDemandMeshVR/       progetto Unity 6.3 (template VR): client che chiede le mesh al server e le mostra
 tests/                      test unitari (pytest)
 third_party/, checkpoints/  codice e pesi upstream (scaricati, non versionati)
@@ -198,7 +203,7 @@ legge anche l'energia: della GPU via NVML (Volta+) e della CPU via RAPL.
 
 ## 8. Prototipo on-demand: server Edge + client Unity
 
-Il visore (per ora Unity sul PC, con l'XR Device Simulator) manda una nuvola di punti al server Edge, che
+Il visore (il Quest 2, oppure Unity sul PC con l'XR Device Simulator) manda una nuvola di punti al server Edge, che
 risponde con la mesh ricostruita in formato `.glb`; Unity la carica a runtime.
 
 ```
@@ -242,7 +247,8 @@ Header della risposta, in millisecondi: `X-Queue-Ms`, `X-Preprocess-Ms`, `X-Infe
 cavo, l'indirizzo del visore via Wi-Fi). Un log con le colonne di una versione precedente viene rinominato
 (`edge_requests_old_<data>.csv`) invece di essere mescolato alle righe nuove.
 
-**Client Unity** (`unity/OnDemandMeshVR/Assets/Scripts/`):
+**Client Unity, test di un solo oggetto** (`unity/OnDemandMeshVR/Assets/Scripts/`). È il primo client, superato dalla
+scena con più oggetti descritta sotto: nella scena l'oggetto `MeshLoader` che lo contiene è **disattivato**.
 
 1. Avvia il server (doppio clic su `start_edge_server.bat`).
 2. Sull'oggetto `MeshLoader` della scena aggiungi il componente **Edge Mesh Client** (`EdgeMeshClient.cs`): usa il
@@ -303,7 +309,7 @@ Per *Point Material* vuoto il componente crea a runtime un materiale `Universal 
 va bene nell'editor, ma per una build sul visore conviene assegnare un materiale, perché Unity può escludere dalla
 build gli shader non usati.
 
-**Sul Quest** (guida passo passo, da visore spento: [`docs/guida_quest.md`](docs/guida_quest.md)): la stessa app
+**Sul Quest** (modalità sviluppatore attiva e debug USB autorizzato dentro il visore): la stessa app
 gira sul visore. I file di `StreamingAssets` si leggono anche da dentro l'`.apk`, un pannello di stato sotto la linea
 dello sguardo mostra server, oggetti e fps, e i materiali dei punti e del pannello stanno in `Assets/Resources` per
 finire sempre nella build. In Unity, **Tools → Quest → Prepare and build APK** (`Assets/Editor/QuestBuild.cs`)
@@ -323,6 +329,18 @@ clic) usano `adb` di Unity:
 
 Il riassunto si può rigenerare, anche per le cartelle vecchie, con
 `python -m benchmarks.quest_report benchmarks/results/quest/<cartella>`.
+
+Note pratiche per le sessioni:
+- il cavo resta collegato anche nella sessione Wi-Fi: porta solo il registro degli fps, le richieste passano dal Wi-Fi;
+- premere **Invio** nella finestra **prima** di togliere il visore (in standby non ci sono fps) e non chiuderla con la
+  X (i risultati si salvano dopo Invio);
+- per un modello vero: `tools\quest\session_wifi.bat --server-args "--backend model --model meshanything"`;
+- Wi-Fi: la prima volta Windows Defender chiede l'accesso, va consentito sulle **reti private**, e la rete del PC deve
+  essere *privata* (*Impostazioni → Rete e Internet → Wi-Fi*); prova da telefono: `http://<ip del PC>:8000/health`;
+- l'orologio del PC può essere sbagliato di qualche secondo: la sessione misura la differenza col visore e il
+  riassunto la corregge (avvisa se cambia durante la sessione);
+- lo stick difettoso non serve: sul visore l'app spegne lo spostamento con gli stick (`sticks off` sul pannello), ci si
+  muove camminando.
 
 Limiti del prototipo:
 - le misure lato Unity riguardano il dispositivo su cui gira: il PC nell'editor, il Quest nella build;
