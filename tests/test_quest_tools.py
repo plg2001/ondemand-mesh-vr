@@ -49,3 +49,14 @@ def test_lan_addresses_exclude_loopback():
 
     for ip in lan_ipv4_addresses():
         assert not ip.startswith(("127.", "169.254.")) and ip.count(".") == 3
+
+
+def test_apk_path_matches_the_unity_build_script():
+    cs = (ROOT / "unity" / "OnDemandMeshVR" / "Assets" / "Editor" / "QuestBuild.cs").read_text(encoding="utf-8")
+    assert f'OutputFile = "{quest.APK.name}"' in cs
+    assert quest.APK.parent.name == "Builds"  # Builds/ is git-ignored by unity/.gitignore
+
+
+def test_quest_build_script_lowers_the_minimum_api_level_to_29():
+    cs = (ROOT / "unity" / "OnDemandMeshVR" / "Assets" / "Editor" / "QuestBuild.cs").read_text(encoding="utf-8")
+    assert "AndroidApiLevel29" in cs

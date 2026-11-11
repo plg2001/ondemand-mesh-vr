@@ -2,6 +2,7 @@
 
 Double-click the .bat files next to this script, or run from the repository root:
     python tools/quest/quest.py check          # headset connected and authorised? Android recent enough? app installed?
+    python tools/quest/quest.py install        # install Builds/OnDemandMeshVR.apk (--run also starts it)
     python tools/quest/quest.py usb --serve    # the app reaches the edge server through the cable; start the server
     python tools/quest/quest.py wifi --serve   # the app reaches the edge server over Wi-Fi; start it on the LAN
     python tools/quest/quest.py logs           # live Unity logs of the app (Ctrl+C to stop)
@@ -37,6 +38,7 @@ OVERRIDE_FILE = "edge_server.txt"  # must match EdgeClient.ServerOverrideFile
 RESULT_FILES = ("edge_timings.csv", "ondemand_events.csv")
 UNITY_EDITORS = Path("C:/Program Files/Unity/Hub/Editor")
 GUIDE = "docs/guida_quest.md"
+APK = ROOT / "unity" / "OnDemandMeshVR" / "Builds" / "OnDemandMeshVR.apk"  # written by Unity: Tools > Quest
 
 
 # ----------------------------------------------------------------------------- discovery
@@ -138,6 +140,35 @@ def cmd_check(adb: Adb, args) -> int:
     reverse = adb.run("reverse", "--list").stdout.strip()
     print("USB tunnel: " + (reverse.replace("\n", "; ") if reverse else "off"))
     print("edge server on this PC: " + ("running" if server_answers(f"http://127.0.0.1:{args.port}") else "not running"))
+    return 0
+
+
+def cmd_install(adb: Adb, args) -> int:
+    apk = Path(args.apk) if args.apk else APK
+    if not apk.exists():
+        print(f"APK not found: {apk}")
+        print("Build it in Unity first: Tools > Quest > Prepare and build APK (guide, part 4).")
+        return 1
+    if not require_device(adb):
+        return 1
+    print(f"Installing {apk.name} ({apk.stat().st_size / 1048576:.0f} MB) on the headset: about a minute...")
+    r = adb.run("install", "-r", "-d", str(apk), timeout=900)  # -r keeps the app's data, -d allows older builds
+    out = (r.stdout + r.stderr).strip()
+    if r.returncode != 0 or "Success" not in out:
+        print(out)
+        if "OLDER_SDK" in out:
+            print("The headset's Android is older than the app's Minimum API Level: update the headset software "
+                  "or, in Unity, run Tools > Quest > Prepare project and build again.")
+        elif "INSUFFICIENT_STORAGE" in out:
+            print("The headset is out of space: free some in the Quest library, then try again.")
+        elif "INSTALL_FAILED_UPDATE_INCOMPATIBLE" in out or "SIGNATURES" in out:
+            print("An older build signed differently is installed: uninstall it in the headset library, then retry.")
+        return 1
+    package, _ = project_android_settings()
+    print("Installed. In the headset: Library > filter 'Unknown sources' > OnDemandMeshVR.")
+    if args.run and package:
+        adb.shell("monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1")
+        print("Start requested: put the headset on.")
     return 0
 
 
@@ -265,6 +296,9 @@ def main(argv=None) -> int:
     ap.add_argument("--port", type=int, default=8000, help="edge server port (default 8000)")
     sub = ap.add_subparsers(dest="command", required=True)
     sub.add_parser("check", help="is the headset ready?")
+    p = sub.add_parser("install", help="install the .apk built by Unity")
+    p.add_argument("--apk", default=None, help=f"path of the .apk (default {APK.relative_to(ROOT)})")
+    p.add_argument("--run", action="store_true", help="start the app after installing it")
     for name, text in (("usb", "reach the server through the USB cable"), ("wifi", "reach the server over Wi-Fi")):
         p = sub.add_parser(name, help=text)
         p.add_argument("--serve", action="store_true", help="then start the edge server in this window")
@@ -280,7 +314,8 @@ def main(argv=None) -> int:
         print("adb not found. It comes with Unity's Android Build Support (Unity Hub > Installs > Add modules), "
               f"or with Meta Quest Developer Hub. See {GUIDE}")
         return 1
-    commands = {"check": cmd_check, "usb": cmd_usb, "wifi": cmd_wifi, "logs": cmd_logs, "pull": cmd_pull}
+    commands = {"check": cmd_check, "install": cmd_install, "usb": cmd_usb, "wifi": cmd_wifi, "logs": cmd_logs,
+                "pull": cmd_pull}
     return commands[args.command](Adb(adb_path), args)
 
 

@@ -304,11 +304,15 @@ build gli shader non usati.
 **Sul Quest** (guida passo passo, da visore spento: [`docs/guida_quest.md`](docs/guida_quest.md)): la stessa app
 gira sul visore. I file di `StreamingAssets` si leggono anche da dentro l'`.apk`, un pannello di stato sotto la linea
 dello sguardo mostra server, oggetti e fps, e i materiali dei punti e del pannello stanno in `Assets/Resources` per
-finire sempre nella build. Gli strumenti in `tools/quest/` (doppio clic) usano `adb` di Unity:
+finire sempre nella build. In Unity, **Tools → Quest → Prepare and build APK** (`Assets/Editor/QuestBuild.cs`)
+applica le impostazioni per il Quest (API minima 29, Internet, IL2CPP/ARM64, simulatore `EditorOnly`) e costruisce
+`unity/OnDemandMeshVR/Builds/OnDemandMeshVR.apk`, senza bisogno del visore. Gli strumenti in `tools/quest/` (doppio
+clic) usano `adb` di Unity:
 
 | Script | Cosa fa |
 |---|---|
 | `check_headset.bat` | visore collegato e autorizzato? Android abbastanza recente? app installata? |
+| `install_app.bat` | installa sul visore `Builds\OnDemandMeshVR.apk` (costruito da Unity) e lo avvia |
 | `server_usb.bat` | il visore raggiunge il server **attraverso il cavo** (`adb reverse`), poi avvia il server |
 | `server_wifi.bat` | scrive sul visore l'indirizzo del PC in rete (`edge_server.txt` nei dati dell'app, letto all'avvio: non serve rifare la build) e avvia il server raggiungibile dal Wi-Fi |
 | `show_logs.bat` | la Console dell'app sul visore, in diretta |

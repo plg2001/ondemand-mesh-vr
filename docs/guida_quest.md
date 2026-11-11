@@ -70,33 +70,50 @@ Serve per installare app dal PC.
    |---|---|
    | `Put on the headset and accept 'Allow USB debugging'` | indossa il visore e accetta la richiesta del punto 2 |
    | `No headset found` | cavo dati? visore acceso? modalità sviluppatore attiva? Se sì, installa i driver ADB di Meta (*Oculus ADB Drivers*, dal sito sviluppatori Meta) o **Meta Quest Developer Hub**, che li include |
-   | `PROBLEM: the Unity project requires API level ...` | aggiorna il software del visore (Impostazioni → Sistema/Generale → Aggiornamento software); se non basta, in Unity abbassa *Minimum API Level* (parte 4, punto 6) |
+   | `PROBLEM: the Unity project requires API level ...` | aggiorna il software del visore (Impostazioni → Sistema/Generale → Aggiornamento software), oppure in Unity usa **Tools → Quest → Prepare project** e ricostruisci (parte 4) |
 
 ---
 
-## 4. Preparare Unity per il Quest (una volta sola)
+## 4. Costruire l'app per il Quest (una volta sola, **senza visore**)
 
-1. **XR Device Simulator solo nell'editor.** Nella Hierarchy seleziona *XR Device Simulator*; in cima all'Inspector,
-   nel menu **Tag**, scegli **EditorOnly**. Gli oggetti con questa etichetta non finiscono nella build: sul visore il
-   simulatore disturberebbe il tracciamento vero. (Il codice lo disattiva comunque, ma l'etichetta è la soluzione
-   pulita.)
-2. **Salva la scena**: `Ctrl+S`.
-3. **Passa ad Android**: *File → Build Profiles* → seleziona **Android** → **Switch Platform**. Ci mette diversi
-   minuti (Unity riconverte le risorse).
-4. **XR per Android**: *Edit → Project Settings → XR Plug-in Management* → scheda con l'icona di Android → deve essere
-   spuntato **OpenXR**; sotto *OpenXR*, sempre nella scheda Android, deve essere attivo **Meta Quest Support**. Nel
-   progetto lo sono già: è solo un controllo.
-5. **Project Validation**: *XR Plug-in Management → Project Validation*, scheda Android → **Fix All**. Ripeti finché
-   non restano errori (gli avvisi gialli si possono lasciare).
-6. **Player**: *Project Settings → Player* → scheda Android → *Other Settings*:
-   - **Internet Access** = *Require* (senza, l'app non può usare la rete);
-   - *Allow downloads over HTTP* = *Always allowed* (già impostato);
-   - *Minimum API Level*: lascialo com'è, salvo il caso `PROBLEM` della parte 3.
-7. **Prima build**: *File → Build Profiles* → in *Run Device* scegli il **Quest 2** (se non compare, premi *Refresh*
-   con il visore collegato e autorizzato) → **Build And Run**. Quando chiede dove salvare l'`.apk`, crea la cartella
-   `unity/OnDemandMeshVR/Builds` (è esclusa da git) e chiamalo `OnDemandMeshVR.apk`.
-   **La prima build è lenta** (anche 20-30 minuti su questo PC); le successive molto meno. Alla fine Unity installa e
-   avvia l'app sul visore da solo.
+Un comando di menu di Unity prepara le impostazioni e costruisce l'app: **Tools → Quest → Prepare and build APK**
+(il menu *Tools* sta nella barra in alto, tra *Jobs* e *Tutorials*).
+
+1. Esci dalla modalità Play e salva la scena con `Ctrl+S`.
+2. **Tools → Quest → Prepare and build APK**.
+3. **Se la piattaforma non è ancora Android**, Unity lo dice e chiede il permesso: premi *Passa ad Android*. Unity
+   riconverte le risorse (alcuni minuti, la barra in basso mostra l'avanzamento). **Quando ha finito, ripeti il
+   punto 2**: il passaggio di piattaforma interrompe il comando, che non può proseguire da solo.
+4. Il comando controlla le impostazioni e **corregge solo quelle che non vanno**, elencandole nella Console
+   (`[QuestBuild] ...`):
+   - *Minimum API Level* abbassato a Android 10 (API 29): il template VR chiede Android 14, e un Quest 2 con un
+     sistema più vecchio rifiuterebbe di installare l'app;
+   - *Internet Access* = *Require* (senza, l'app non potrebbe parlare con il server);
+   - *Allow downloads over HTTP* = *Always allowed* (il server usa `http` sulla rete locale);
+   - *Scripting Backend* = IL2CPP e architettura ARM64 (la CPU del Quest);
+   - formato `.apk`, non `.aab` (quello è per Google Play);
+   - l'*XR Device Simulator* viene etichettato **EditorOnly**, così non entra nella build, e la scena viene salvata.
+5. Poi parte la build. **La prima è lenta: 20-30 minuti, a volte di più su questo PC.** La barra di avanzamento si
+   ferma spesso, ed è normale; non chiudere Unity e, se puoi, chiudi gli altri programmi pesanti (browser). La prima
+   volta Unity scarica anche dei componenti di Gradle: serve internet.
+6. Alla fine una finestra mostra il percorso del file: **`unity\OnDemandMeshVR\Builds\OnDemandMeshVR.apk`**.
+
+Altre voci dello stesso menu:
+
+| Voce | Cosa fa |
+|---|---|
+| **Prepare project** | applica solo le impostazioni, senza costruire |
+| **Prepare, build and run on headset** | come sopra, poi installa e avvia l'app sul visore collegato (serve il visore) |
+
+**Se la build fallisce**, una finestra mostra i primi errori e la Console li riporta per intero: mandameli. Gli errori
+più probabili sono di Gradle (rete assente durante il download) o di spazio su disco (la build ne usa alcuni GB).
+
+**Controllo facoltativo prima della build.** *Edit → Project Settings → XR Plug-in Management → Project Validation*,
+scheda Android: se compaiono errori rossi, premi *Fix All*. Nel progetto OpenXR e *Meta Quest Support* sono già
+attivi per Android.
+
+**Installare l'app sul visore, quando sarà carico:** doppio clic su **`tools\quest\install_app.bat`** (visore
+collegato col cavo e autorizzato, parte 3). Non serve riaprire Unity.
 
 ---
 
@@ -107,8 +124,9 @@ funzioni; i tempi di rete però non sono quelli del Wi-Fi.
 
 1. Visore collegato e acceso. Sul PC: doppio clic su **`tools\quest\server_usb.bat`**. Attiva il "tunnel" sul cavo
    e avvia il server nella stessa finestra (backend mock, 2 secondi per oggetto). **Lascia la finestra aperta.**
-2. Avvia l'app sul visore: dopo *Build And Run* parte da sola; altrimenti *Libreria* → filtro **Origini sconosciute**
-   (*Unknown Sources*) → **OnDemandMeshVR**.
+2. Installa e avvia l'app: doppio clic su **`tools\quest\install_app.bat`** (la installa e la fa partire). Le volte
+   dopo, se l'app è già installata, avviala dalla *Libreria* → filtro **Origini sconosciute** (*Unknown Sources*) →
+   **OnDemandMeshVR**.
 3. **Cosa vedrai**: i punti azzurri degli oggetti davanti a te e, in basso, un **pannello di stato** che segue lo
    sguardo:
    - `Edge OK http://127.0.0.1:8000 (mock/convex-hull)` → il server è raggiungibile;
@@ -167,13 +185,50 @@ I file in `benchmarks/results/quest/` non sono esclusi da git: committali solo q
 |---|---|
 | `check_headset.bat`: `No headset found` | cavo solo ricarica, modalità sviluppatore spenta o driver mancanti (parte 3) |
 | `unauthorized` | accetta "Consentire il debug USB?" dentro il visore |
-| *Build And Run* non trova il visore | visore non autorizzato, oppure premi *Refresh* in *Run Device* |
-| Installazione fallita con `INSTALL_FAILED_OLDER_SDK` | Android del visore troppo vecchio: aggiorna il visore o abbassa *Minimum API Level* |
+| `install_app.bat`: `APK not found` | costruisci prima l'app in Unity (parte 4) |
+| Installazione fallita con `INSTALL_FAILED_OLDER_SDK` | Android del visore più vecchio del *Minimum API Level* dell'app: aggiorna il visore, oppure **Tools → Quest → Prepare project** e ricostruisci |
 | L'app parte ma resta nera, o non segue la testa | controlla OpenXR e *Project Validation* (parte 4); verifica che l'XR Device Simulator sia `EditorOnly` |
 | Pannello: `Edge NOT REACHABLE` | la finestra del server è aperta? Via cavo: rilancia `server_usb.bat`. Via Wi-Fi: stessa rete, rete *privata*, firewall (parte 6) |
 | Nei log: `Cleartext HTTP traffic not permitted` | *Allow downloads over HTTP* non è *Always allowed*: correggi e rifai la build |
 | Nei log: `Insecure connection not allowed` | stessa causa del punto precedente |
 | Punti rosa/magenta o invisibili | il materiale dei punti non è finito nella build: mandami il log |
 | Non trovo l'app nel visore | *Libreria* → filtro *Origini sconosciute* |
+| Nell'app vengo spinto indietro da solo / l'analogico non funziona | lo stick "deriva" (non torna al centro): vedi la parte 9 |
 
 Se qualcosa non torna, la cosa più utile da mandarmi è l'output di `check_headset.bat` e quello di `show_logs.bat`.
+
+---
+
+## 9. Se uno stick del controller non funziona (deriva)
+
+Sintomo tipico: nell'app ti muovi da solo, di solito all'indietro, anche con le mani ferme. Lo stick non torna al centro
+e continua a "premere" in una direzione. Capita spesso sui controller del Quest 2 con l'uso.
+
+**Cosa fa l'app.** Sul visore **spegne lo spostamento con gli stick** (camminata, rotazione a scatti e teletrasporto del
+template): la camera si muove solo con la tua testa e con i tuoi passi. È anche il modo giusto di fare la prova della
+tesi, camminare e girare attorno agli oggetti. Il pannello di stato lo conferma: nella prima riga compare
+`sticks off`. Nel componente *Point Cloud Scene* la casella **Disable Stick Locomotion** (spuntata di default) lo
+regola; **Disable Stick Locomotion In Editor** serve per provarlo anche nel simulatore. L'effetto si vede dalla
+build successiva: serve ricostruire e reinstallare l'app (parte 4 e 5).
+
+**Subito, senza ricostruire nulla** (con l'app già installata):
+1. **Togli la pila dal controller difettoso.** Il Quest 2 usa una pila AA. Senza pila il controller è spento e non
+   può inviare niente.
+2. Per muoverti nei menu del visore usa **l'altro controller**, oppure il **tracciamento delle mani**: sul visore,
+   *Impostazioni → Movimenti e tracciamento → Tracciamento di mani e corpo* → attivalo, e lascia attivo il passaggio
+   automatico tra mani e controller (i nomi esatti possono cambiare con gli aggiornamenti). Con le mani si seleziona
+   unendo pollice e indice.
+3. Nell'app, il tracciamento delle mani è già attivo nel progetto.
+
+**Per camminare serve spazio.** Con il confine in modalità **stazionaria** puoi solo girare la testa; per avvicinarti
+agli oggetti servono almeno 2 × 2 metri liberi, con il confine a **scala della stanza** (*room-scale*). La stanza di
+prova ha gli oggetti tra 2 e 4 metri davanti a te.
+
+**Riparare lo stick.** In ordine di fatica: aria compressa o un po' di alcol isopropilico intorno allo stick, ruotandolo
+per qualche minuto; sostituire il modulo dello stick (un componente economico, ma serve saldare); oppure sostituire il
+controller, o chiedere assistenza a Meta se è ancora in garanzia. Non so in che stato di garanzia sia il tuo visore.
+
+**E il controller della PS4?** Il Quest sa accoppiarsi a un gamepad Bluetooth, e un giorno si potrebbe far muovere la
+camera con quello. Per ora non serve: l'app non richiede stick e, per la tesi, camminare davvero è più fedele. Se in
+futuro ti mancasse lo spazio per camminare, si può aggiungere.
+

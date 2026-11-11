@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.XR.Interaction.Toolkit.Locomotion;
 using Debug = UnityEngine.Debug;
 
 /// <summary>
@@ -75,6 +76,15 @@ public class PointCloudScene : MonoBehaviour
     [Tooltip("Seconds before retrying an object whose reconstruction failed")]
     public float retryAfterSeconds = 10f;
 
+    [Header("Controllers")]
+    [Tooltip("On the headset, turn off the thumbstick locomotion of the XR rig (move, turn, teleport): a thumbstick " +
+             "that drifts would push the user around by itself. Walk and turn physically instead, as in the thesis " +
+             "scenario. The rest of the controllers (and the hands) keeps working.")]
+    public bool disableStickLocomotion = true;
+
+    [Tooltip("Also in the Editor, to try this behaviour without a headset")]
+    public bool disableStickLocomotionInEditor;
+
     [Header("Headset status panel / logging")]
     [Tooltip("Text panel below the line of sight with server state, objects and frame rate (always on the headset)")]
     public bool showStatusPanel = true;
@@ -99,6 +109,7 @@ public class PointCloudScene : MonoBehaviour
     bool _serverOk;
     bool _checkingServer;
     int _healthFailures;      // consecutive /health misses
+    int _locomotionOff = -1;  // providers turned off by DisableStickLocomotion (-1: left as they are)
     float _nextServerCheck;
     string _serverInfo = "not checked yet";
     string _lastEvent = "";
@@ -126,6 +137,8 @@ public class PointCloudScene : MonoBehaviour
 
     async void Start()
     {
+        if (disableStickLocomotion && (!Application.isEditor || disableStickLocomotionInEditor))
+            DisableStickLocomotion();
         _client = new EdgeClient(EdgeClient.ResolveUrl(serverUrl), timeoutSeconds);
         if (showStatusPanel && (statusPanelInEditor || !Application.isEditor))
         {
@@ -224,6 +237,21 @@ public class PointCloudScene : MonoBehaviour
         }
         // the particle colour (Point Color) multiplies the material colour, which stays white
         return new Material(shader) { name = "PointCloud (runtime)" };
+    }
+
+    /// <summary>
+    /// Turns off every locomotion provider of the XR Interaction Toolkit (continuous move, snap/continuous turn,
+    /// teleport, grab move, climb). They all read the thumbsticks or the hands to move the rig; head tracking, which
+    /// is what moves the camera when the user walks or turns, does not depend on them.
+    /// </summary>
+    void DisableStickLocomotion()
+    {
+        var providers = FindObjectsByType<LocomotionProvider>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (var p in providers)
+            p.enabled = false;
+        _locomotionOff = providers.Length;
+        Debug.Log($"[PointCloudScene] thumbstick locomotion off ({providers.Length} providers disabled): " +
+                  "the rig only moves with the head");
     }
 
     void Fail(string message)
@@ -460,7 +488,8 @@ public class PointCloudScene : MonoBehaviour
     string StatusText()
     {
         var sb = new StringBuilder();
-        sb.Append($"<b>On-demand mesh</b>   {_fps:F0} fps   mode {mode}\n");
+        sb.Append($"<b>On-demand mesh</b>   {_fps:F0} fps   mode {mode}   " +
+                  $"sticks {(_locomotionOff >= 0 ? "off" : "on")}\n");
         sb.Append(_serverOk
             ? $"Edge <color=#70ff70>OK</color> {EffectiveServerUrl} ({_serverInfo})\n"
             : $"Edge <color=#ff6060>NOT REACHABLE</color> {EffectiveServerUrl}\n<size=80%>{_serverInfo}</size>\n");
