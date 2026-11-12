@@ -13,15 +13,18 @@ using Debug = UnityEngine.Debug;
 /// GameObject per object, placed with its pose, drawing the object's sparse cloud as points.
 ///
 /// Mode On Demand (default): every Check Interval the camera view is tested; objects in view that have no mesh are
-/// sent to the edge server, one at a time, nearest first, and their points are replaced by the mesh. A mesh that
-/// stays out of view for Release After Seconds is removed and the object goes back to points; with Cache Meshes
-/// the received .glb is kept, so the object is shown again at once when it comes back into view.
+/// sent to the edge server, one at a time, the one closest to the centre of the view first (Queue Order), and their
+/// points are replaced by the mesh. A failed object is asked for again only if that can help (server unreachable or
+/// a passing error, with a pause that doubles at every failure); objects the server gave up on (time budget) or
+/// refused stay as points. A mesh that stays out of view for Release After Seconds is removed and the object goes
+/// back to points; with Cache Meshes the received .glb is kept, so the object is shown again at once when it comes
+/// back into view.
 /// Mode Reconstruct All On Start: every object, nearest first, regardless of the view.
 ///
 /// Works in the Editor and on Quest (Android). On the headset a status panel below the line of sight shows the
 /// server state and the frame rate; the server address can be changed without a rebuild (tools/quest/quest.py).
 /// Context menu (three dots of the component, during Play): Reconstruct all objects / Remove all meshes /
-/// Print memory report.
+/// Retry failed objects / Print memory report.
 /// </summary>
 public class PointCloudScene : MonoBehaviour
 {
@@ -31,6 +34,14 @@ public class PointCloudScene : MonoBehaviour
         ReconstructAllOnStart, // every object, nearest first, no visibility logic
         Manual                 // nothing automatic: use the context menu
     }
+
+    public enum QueueOrder
+    {
+        CenterOfView,  // the object closest to where the user is looking
+        Nearest        // the object closest to the user
+    }
+
+    const double MaxRetryPauseSeconds = 300;
 
     [Header("Scene")]
     [Tooltip("Folder inside Assets/StreamingAssets that contains scene.json")]
@@ -58,6 +69,10 @@ public class PointCloudScene : MonoBehaviour
     [Header("Behaviour")]
     public Mode mode = Mode.OnDemand;
 
+    [Tooltip("Which object in view is requested first: the one closest to the centre of the view (where the user " +
+             "is looking) or the nearest one")]
+    public QueueOrder queueOrder = QueueOrder.CenterOfView;
+
     [Tooltip("How often the camera view is tested, in seconds")]
     public float checkIntervalSeconds = 0.1f;
 
@@ -73,8 +88,14 @@ public class PointCloudScene : MonoBehaviour
     [Tooltip("Keep each received .glb in memory: an object that comes back into view is shown again without a request")]
     public bool cacheMeshes = true;
 
-    [Tooltip("Seconds before retrying an object whose reconstruction failed")]
+    [Tooltip("Seconds before asking again for an object after a server error, doubled at every new failure (at " +
+             "most 5 minutes). Objects the server gave up on (time budget, HTTP 504) or refused (HTTP 4xx, e.g. " +
+             "--objects) are not asked for again: context menu > Retry failed objects")]
     public float retryAfterSeconds = 10f;
+
+    [Tooltip("At start, load and draw a tiny mesh once (invisible): the first real mesh then does not pay glTFast's " +
+             "first load and the shader preparation, which on the Quest cost 1-2 s at 50-60 fps")]
+    public bool warmUpMeshLoading = true;
 
     [Header("Controllers")]
     [Tooltip("On the headset, turn off the thumbstick locomotion of the XR rig (move, turn, teleport): a thumbstick " +
@@ -92,6 +113,10 @@ public class PointCloudScene : MonoBehaviour
     [Tooltip("Show the panel also in the Editor (there the Console is usually enough)")]
     public bool statusPanelInEditor;
 
+    [Tooltip("Above each object whose mesh is shown, a small label: model, triangles, time and the accuracy measured " +
+             "by the server against the original mesh (F-score, precision, recall, Chamfer)")]
+    public bool showObjectLabels = true;
+
     [Tooltip("Write edge_timings.csv and ondemand_events.csv in Application.persistentDataPath")]
     public bool logToCsv = true;
 
@@ -100,6 +125,8 @@ public class PointCloudScene : MonoBehaviour
     SceneManifest _manifest;
     EdgeClient _client;
     SceneObject _inFlight;       // the object whose mesh is being fetched (one at a time)
+    double _inFlightSince;       // when its request started (Time.realtimeSinceStartupAsDouble)
+    EdgeClient.Health _health;   // last /health answer: model, typical time, time budget
     bool _busy;                  // ReconstructAll running
     bool _loaded;
     float _nextCheck;
@@ -150,9 +177,39 @@ public class PointCloudScene : MonoBehaviour
         _loaded = await LoadSceneAsync();
         if (!_loaded || this == null)
             return;
-        Debug.Log($"[PointCloudScene] mode: {mode}, edge server: {_client.BaseUrl}");
-        if (mode == Mode.ReconstructAllOnStart)
+        Debug.Log($"[PointCloudScene] mode: {mode}, queue order: {queueOrder}, edge server: {_client.BaseUrl}");
+        if (warmUpMeshLoading)
+            await WarmUpMeshLoadingAsync();  // the first request takes seconds anyway: no need to hold it back
+        if (this != null && mode == Mode.ReconstructAllOnStart)
             await ReconstructAll();
+    }
+
+    /// <summary>
+    /// Loads a tiny mesh made by the server's own exporter (WarmUpMesh) with the mesh material and lets it be drawn
+    /// for a few frames, 1 m in front of the camera but 0.1 mm wide, so nobody sees it. glTFast's first load and the
+    /// GPU's preparation of the material's shader then happen here, during the app's start, instead of with the
+    /// first real mesh, where on the Quest they cost 1-2 s at 50-60 fps (and a first load of ~55 ms instead of 28).
+    /// </summary>
+    async Task WarmUpMeshLoadingAsync()
+    {
+        var cam = CurrentCamera();
+        if (cam == null)
+            return;
+        var timer = Stopwatch.StartNew();
+        var go = new GameObject("WarmUpMesh");
+        go.transform.SetParent(cam.transform, false);
+        go.transform.localPosition = new Vector3(0f, 0f, 1f);
+        go.transform.localScale = Vector3.one * 1e-4f;
+        var loader = go.AddComponent<RuntimeMeshLoader>();
+        loader.overrideMaterial = meshMaterial;  // the same material as the real meshes, hence the same shader
+        var ok = await loader.LoadFromBytes(WarmUpMesh.Glb, "warm-up");
+        var until = Time.frameCount + 3;  // the shader is prepared when the mesh is drawn, not when it is loaded
+        while (ok && go != null && Time.frameCount < until)
+            await Task.Yield();
+        if (go != null)
+            Destroy(go);
+        Debug.Log($"[PointCloudScene] mesh loading warm-up {(ok ? "done" : "FAILED")} in " +
+                  $"{timer.Elapsed.TotalMilliseconds:F0} ms (first load {loader.LastLoadMs:F0} ms)");
     }
 
     // ------------------------------------------------------------------ scene loading
@@ -209,7 +266,7 @@ public class PointCloudScene : MonoBehaviour
                 : Quaternion.identity;
             go.transform.localScale = Vector3Of(entry.scale, Vector3.one);
             var obj = go.AddComponent<SceneObject>();
-            obj.Init(entry, cloud, meshMaterial, points, pointSize, pointColor);
+            obj.Init(entry, cloud, meshMaterial, points, pointSize, pointColor, showObjectLabels);
             _objects.Add(obj);
             total += obj.PointCount;
         }
@@ -268,7 +325,7 @@ public class PointCloudScene : MonoBehaviour
         _checkingServer = true;
         try
         {
-            var (ok, info) = await _client.HealthAsync();
+            var (ok, info, health) = await _client.HealthAsync();
             if (this == null)
                 return;
             if (ok)
@@ -278,6 +335,8 @@ public class PointCloudScene : MonoBehaviour
                 _serverOk = true;
                 _serverInfo = info;
                 _healthFailures = 0;
+                if (health != null)
+                    _health = health;
             }
             else
             {
@@ -343,8 +402,10 @@ public class PointCloudScene : MonoBehaviour
             {
                 // A waiting period starts when the object enters the view with none pending, or after it was away
                 // for a while. Turning the camera away and back for a moment must not restart the clock, or the
-                // measured wait would be shorter than what the user really experienced.
-                if (!o.inView && (o.VisibleSince < 0 || now - o.LastSeen > releaseAfterSeconds))
+                // measured wait would be shorter than what the user really experienced; nor must looking away while
+                // its request is running (with a real model that takes minutes, the user does look around).
+                var requestRunning = o.state == SceneObject.State.Requesting;
+                if (!o.inView && (o.VisibleSince < 0 || (!requestRunning && now - o.LastSeen > releaseAfterSeconds)))
                     o.VisibleSince = now;
                 o.LastSeen = now;
             }
@@ -366,7 +427,7 @@ public class PointCloudScene : MonoBehaviour
 
         if (_inFlight == null && !_busy && _serverOk)
         {
-            var next = PickNext(camPos, now);
+            var next = PickNext(cam.transform, now);
             if (next != null)
                 _ = Serve(next);
         }
@@ -385,33 +446,46 @@ public class PointCloudScene : MonoBehaviour
         return cam;
     }
 
-    /// <summary>Nearest object in view that still needs a mesh (failed ones are retried after a pause).</summary>
-    SceneObject PickNext(Vector3 camPos, double now)
+    /// <summary>
+    /// The object in view to ask for next: the one closest to the centre of the view or, with Queue Order = Nearest,
+    /// the nearest one. A failed object competes again only when asking can help and its pause is over: otherwise a
+    /// near object that the server cannot finish would be asked for forever and the others would never get a turn.
+    /// </summary>
+    SceneObject PickNext(Transform cam, double now)
     {
         SceneObject best = null;
-        var bestDistance = float.MaxValue;
+        var bestScore = float.MaxValue;
         foreach (var o in _objects)
         {
             if (o == null || !o.inView)
                 continue;
             var needsMesh = o.state == SceneObject.State.PointsOnly ||
-                            (o.state == SceneObject.State.Failed && now - o.FailedAt > retryAfterSeconds);
+                            (o.state == SceneObject.State.Failed && o.WillRetry && now - o.FailedAt > RetryPause(o));
             if (!needsMesh)
                 continue;
-            var d = Vector3.Distance(camPos, o.transform.position);
-            if (d < bestDistance)
+            var toObject = o.WorldBounds.center - cam.position;
+            var score = queueOrder == QueueOrder.CenterOfView ? Vector3.Angle(cam.forward, toObject) : toObject.magnitude;
+            if (score < bestScore)
             {
-                bestDistance = d;
+                bestScore = score;
                 best = o;
             }
         }
         return best;
     }
 
+    /// <summary>Seconds to wait before asking again for a failed object (meaningful only when it WillRetry).</summary>
+    double RetryPause(SceneObject o) =>
+        o.LastFailure == SceneObject.Failure.Connection
+            ? retryAfterSeconds  // requests were paused until /health answered: the server is back, ask again
+            : Math.Min(retryAfterSeconds * Math.Pow(2, Math.Max(0, o.FailedAttempts - 1)), MaxRetryPauseSeconds);
+
     /// <summary>Asks the edge for the object's mesh. One at a time: the others wait for their turn.</summary>
     async Task Serve(SceneObject o)
     {
         _inFlight = o;
+        _inFlightSince = Time.realtimeSinceStartupAsDouble;
+        var durationKey = DurationKey(o);  // fixed now: the server's model cannot change during the request
         try
         {
             var waitedMs = WaitedMs(o);
@@ -420,14 +494,21 @@ public class PointCloudScene : MonoBehaviour
                 return;
             if (row == null)
             {
-                o.FailedAt = Time.realtimeSinceStartupAsDouble;
-                if (o.LastFailureWasConnection)
+                if (o.LastFailure == SceneObject.Failure.Connection)
                 {
                     _serverOk = false;  // stop sending until /health answers again
                     _serverInfo = o.LastError.Split('\n')[0];
                 }
-                _lastEvent = $"<color=#ff6060>{o.objectId}: {o.LastError.Split('\n')[0]}</color>";
+                if (o.NotServedByChoice)
+                    return;  // the server serves only some objects (--objects): counted as "not served", no alarm
+                var next = o.WillRetry ? $"retry in {RetryPause(o):F0} s" : $"{o.LastFailure}, not retried";
+                _lastEvent = $"<color=#ff6060>{o.objectId}: {o.LastError.Split('\n')[0]}</color> ({next})";
                 return;
+            }
+            if (durationKey != null)  // the estimate for the next time this object is asked to this model
+            {
+                PlayerPrefs.SetFloat(durationKey, (float)(row.Value.TotalMs / 1000.0));
+                PlayerPrefs.Save();
             }
             LogOnDemand(o, row, waitedMs);
         }
@@ -442,11 +523,7 @@ public class PointCloudScene : MonoBehaviour
     {
         var waitedMs = WaitedMs(o);
         if (!await o.ShowCachedMeshAsync())
-        {
-            if (o != null)
-                o.FailedAt = Time.realtimeSinceStartupAsDouble;
             return;
-        }
         if (this == null || o == null)
             return;
         LogOnDemand(o, null, waitedMs);
@@ -497,16 +574,57 @@ public class PointCloudScene : MonoBehaviour
         {
             var inView = _objects.Count(o => o != null && o.inView);
             var shown = _objects.Count(o => o != null && o.state == SceneObject.State.MeshReady);
-            var waiting = _objects.Count(o => o != null && o.inView && o.state != SceneObject.State.MeshReady);
+            var givenUp = _objects.Count(o => o != null && o.state == SceneObject.State.Failed && !o.WillRetry);
+            var waiting = _objects.Count(o => o != null && o.inView && o.state != SceneObject.State.MeshReady &&
+                                              !(o.state == SceneObject.State.Failed && !o.WillRetry));
             sb.Append($"Objects {_objects.Count} | in view {inView} | meshes {shown} | waiting {waiting}");
-            if (_inFlight != null)
-                sb.Append($" | asking: {_inFlight.objectId}");
+            if (givenUp > 0)
+                sb.Append($" | not served {givenUp}");
             sb.Append('\n');
+            if (_inFlight != null)
+                sb.Append(InFlightText()).Append('\n');
         }
         if (_lastEvent.Length > 0)
             sb.Append($"Last: {_lastEvent}");
         return sb.ToString();
     }
+
+    /// <summary>
+    /// The panel line of the request in flight: which object, with which model, for how long, and an estimate of the
+    /// time left. The estimate is how long the same object took the last time with the same model (remembered across
+    /// runs) or, if never asked, the server's typical time (the median of its last meshes, or the mock's delay).
+    /// </summary>
+    string InFlightText()
+    {
+        var o = _inFlight;
+        var elapsed = Time.realtimeSinceStartupAsDouble - _inFlightSince;
+        var model = _health != null && _health.label.Length > 0 ? _health.label : "edge";
+        var sb = new StringBuilder($"<color=#ffd760>Reconstructing <b>{o.objectId}</b></color> ({model}): {elapsed:F0} s");
+        var (estimate, source) = EstimateSeconds(o);
+        if (estimate <= 0)
+            sb.Append(", no estimate yet");
+        else if (elapsed < estimate)
+            sb.Append($", about {Math.Ceiling(estimate - elapsed):F0} s left ({source} {estimate:F0} s)");
+        else
+            sb.Append($", longer than {source} ({estimate:F0} s)");
+        if (_health != null && _health.budget_s > 0)
+            sb.Append($", gives up at {_health.budget_s:F0} s");
+        return sb.ToString();
+    }
+
+    (double seconds, string source) EstimateSeconds(SceneObject o)
+    {
+        var key = DurationKey(o);
+        if (key != null && PlayerPrefs.HasKey(key))
+            return (PlayerPrefs.GetFloat(key), "last time");
+        if (_health != null && _health.typical_s > 0)
+            return (_health.typical_s, "typical");
+        return (0, "");
+    }
+
+    /// <summary>PlayerPrefs key of how long this object took with the server's current model (null: model unknown).</summary>
+    string DurationKey(SceneObject o) =>
+        _health == null || _health.model.Length == 0 ? null : $"edge_seconds/{_health.backend}/{_health.model}/{o.objectId}";
 
     // ------------------------------------------------------------------ manual / reconstruct-all
     [ContextMenu("Reconstruct all objects")]
@@ -518,6 +636,19 @@ public class PointCloudScene : MonoBehaviour
         foreach (var o in _objects)
             if (o != null)
                 o.RemoveMesh();
+    }
+
+    [ContextMenu("Retry failed objects")]
+    void RetryFailedObjects()
+    {
+        var n = 0;
+        foreach (var o in _objects)
+            if (o != null && o.state == SceneObject.State.Failed)
+            {
+                o.ResetFailure();
+                n++;
+            }
+        Debug.Log($"[PointCloudScene] {n} failed objects will be asked for again");
     }
 
     [ContextMenu("Print memory report")]

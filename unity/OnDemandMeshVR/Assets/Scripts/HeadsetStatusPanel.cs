@@ -23,7 +23,7 @@ public class HeadsetStatusPanel : MonoBehaviour
         background.name = "Background";
         Destroy(background.GetComponent<Collider>());
         background.transform.SetParent(root.transform, false);
-        background.transform.localScale = new Vector3(0.66f, 0.2f, 1f);
+        background.transform.localScale = new Vector3(0.66f, 0.25f, 1f);  // 5-6 lines
         var material = Resources.Load<Material>("StatusPanelBackground");
         if (material == null)
         {
@@ -39,7 +39,7 @@ public class HeadsetStatusPanel : MonoBehaviour
         textGo.transform.SetParent(root.transform, false);
         textGo.transform.localPosition = new Vector3(0f, 0f, -0.005f);  // just in front of the background
         panel._text = textGo.AddComponent<TextMeshPro>();
-        panel._text.rectTransform.sizeDelta = new Vector2(0.62f, 0.18f);
+        panel._text.rectTransform.sizeDelta = new Vector2(0.62f, 0.23f);
         panel._text.fontSize = 0.2f;                                    // 3D TextMeshPro: 1 = 0.1 m em height
         panel._text.alignment = TextAlignmentOptions.TopLeft;
         panel._text.textWrappingMode = TextWrappingModes.Normal;

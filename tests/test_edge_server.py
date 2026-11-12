@@ -164,3 +164,56 @@ def test_objects_option_refuses_other_objects(tmp_path):
         assert c.post("/reconstruct?object_id=box_01", content=encode_points(xyz)).status_code == 200
     rows = (tmp_path / "log.csv").read_text().splitlines()
     assert len(rows) == 2 and ",box_01," in rows[1]  # refused requests are not logged
+
+
+def test_accuracy_is_measured_and_meshes_saved(tmp_path):
+    pytest.importorskip("httpx")
+    import csv as _csv
+
+    from fastapi.testclient import TestClient
+
+    from edge.server import create_app
+
+    xyz, _ = sample_box(2048)
+    dense, _ = sample_box(20000, seed=1)  # the "original mesh" of box_01
+    app = create_app(MockBackend(), inputs_dir=tmp_path, log_csv=tmp_path / "log.csv", verbose=False,
+                     references={"box_01": dense}, save_meshes=tmp_path / "meshes")
+    with TestClient(app) as c:
+        r = c.post("/reconstruct?object_id=box_01", content=encode_points(xyz))
+        assert r.status_code == 200
+        assert float(r.headers["X-FScore"]) > 0.9  # the convex hull of a box is the box itself
+        assert 0 <= float(r.headers["X-Chamfer-L2"]) < 1e-3
+        assert float(r.headers["X-Quality-Ms"]) <= float(r.headers["X-Server-Ms"])
+        assert r.headers["X-Model-Label"] == "convex-hull"
+        other = c.post("/reconstruct?object_id=not_in_scene", content=encode_points(xyz))
+        assert other.status_code == 200 and "X-FScore" not in other.headers  # no reference: no accuracy
+    saved = sorted(f.name for f in (tmp_path / "meshes").glob("*.glb"))
+    assert len(saved) == 2 and any(name.endswith("_box_01.glb") for name in saved)
+    rows = list(_csv.DictReader((tmp_path / "log.csv").open(encoding="utf-8")))
+    assert float(rows[0]["fscore"]) > 0.9 and rows[0]["mesh_file"].endswith("_box_01.glb")
+    assert rows[1]["fscore"] == "" and rows[1]["quality_ms"] == ""
+
+
+def test_health_gives_the_inputs_of_the_time_estimate(tmp_path):
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    from edge.server import create_app
+
+    app = create_app(MockBackend(0.5), inputs_dir=tmp_path, log_csv=None, verbose=False)
+    with TestClient(app) as c:
+        h = c.get("/health").json()
+        assert h["typical_s"] == 0.5 and h["budget_s"] == 0.0  # mock: its delay, until meshes are served
+        xyz, _ = sample_box(256)
+        c.post("/reconstruct?object_id=box", content=encode_points(xyz))
+        assert 0.5 <= c.get("/health").json()["typical_s"] < 5  # now the median of the meshes served
+
+
+def test_load_references_keeps_xyz(tmp_path):
+    from edge.server import load_references
+
+    np.save(tmp_path / "box_01_ref.npy", np.zeros((10, 6), dtype=np.float32))
+    (tmp_path / "box_01.xyz").write_text("0 0 0\n")
+    refs = load_references(tmp_path)
+    assert list(refs) == ["box_01"] and refs["box_01"].shape == (10, 3)
+    assert load_references(tmp_path / "missing") == {}

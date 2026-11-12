@@ -112,3 +112,15 @@ def test_summarize_warns_when_a_clock_jumps(tmp_path):
     session["clock_offset_s"] = {"start": OFFSET, "end": 0.05}  # PC clock resynchronised during the session
     (tmp_path / "session.json").write_text(json.dumps(session))
     assert "+14.10 s all'inizio, +0.05 s alla fine" in summarize(tmp_path)
+
+
+def test_summary_lists_accuracy_and_failures(tmp_path):
+    app, server = _rows(2)
+    server[0].update(status="ok", model="meshanything", triangles="340", server_ms="66400", fscore="0.7011",
+                     precision="0.5968", recall="0.8496", chamfer_l2="0.001010", quality_ms="82.0")
+    server[1].update(status="error 504", server_ms="121672.5")
+    _write(tmp_path / "edge_timings.csv", app[:1])
+    _write(tmp_path / "edge_requests.csv", server, list(server[0].keys()))
+    text = summarize(tmp_path)
+    assert "| obj0 | meshanything | 340 | 66.4 | 0.70 | 0.60 | 0.85 | 0.00101 |" in text
+    assert "82 ms" in text and "obj1 (error 504, dopo 121.7 s)" in text

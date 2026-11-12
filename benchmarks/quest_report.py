@@ -221,6 +221,8 @@ def summarize(folder: Path) -> str:
                     parts.append(f"{n} da {c} ({link_of(c)})")
             lines += ["Provenienza delle richieste secondo il server: " + "; ".join(parts) + ".", ""]
 
+    lines += accuracy_lines(server)
+
     edge_ev = [e for e in events if e.get("source") == "edge"]
     cache_ev = [e for e in events if e.get("source") == "cache"]
     if events:
@@ -286,6 +288,36 @@ def split_startup(app_fps: list[dict], target: float) -> tuple[list[dict], list[
         if (_f(r, "fps") or 0) >= 0.9 * target and not (_f(r, "stale") or 0):
             return app_fps[:i], app_fps[i:]
     return app_fps, []
+
+
+def accuracy_lines(server: list[dict]) -> list[str]:
+    """Meshes made by the server with their accuracy vs the original mesh, and the requests it gave up on."""
+    ok = [r for r in server if r.get("status") == "ok" and r.get("object_id")]
+    failed = [r for r in server if r.get("status", "ok") != "ok"]
+    if not ok and not failed:
+        return []
+    lines = ["## Mesh generate e accuratezza (dal server)", ""]
+    if ok:
+        lines += ["Accuratezza rispetto alla mesh originale (nuvola densa di `build_scene.py`): F-score all'1% della "
+                  "diagonale, precisione (la mesh non inventa), richiamo (non dimentica), Chamfer-L2.", "",
+                  "| Oggetto | Modello | Triangoli | Server [s] | F-score | Precisione | Richiamo | Chamfer-L2 |",
+                  "|---|---|---|---|---|---|---|---|"]
+        for r in ok:
+            cells = [r["object_id"], r.get("model", ""), r.get("triangles", ""),
+                     f"{(_f(r, 'server_ms') or 0) / 1e3:.1f}"]
+            cells += [f"{_f(r, k):.2f}" if _f(r, k) is not None else "–" for k in ("fscore", "precision", "recall")]
+            cells.append(f"{_f(r, 'chamfer_l2'):.5f}" if _f(r, "chamfer_l2") is not None else "–")
+            lines.append("| " + " | ".join(cells) + " |")
+        quality_ms = [_f(r, "quality_ms") for r in ok if _f(r, "quality_ms") is not None]
+        if quality_ms:
+            lines.append(f"\nIl calcolo dell'accuratezza è compreso nel tempo del server: {_range(quality_ms)} ms "
+                         "per mesh (da togliere per la latenza della sola ricostruzione).")
+        lines.append("")
+    if failed:
+        lines += ["Richieste non riuscite: " + "; ".join(
+            f"{r.get('object_id') or '?'} ({r['status']}, dopo {(_f(r, 'server_ms') or 0) / 1e3:.1f} s)"
+            for r in failed) + ".", ""]
+    return lines
 
 
 def write_report(folder: Path) -> Path:
