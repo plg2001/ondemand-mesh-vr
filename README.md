@@ -69,7 +69,36 @@ third_party/, checkpoints/  codice e pesi upstream (scaricati, non versionati)
 > `models/` non contiene `__init__.py` di proposito: FastMesh ha un package top-level chiamato `models`,
 > che altrimenti verrebbe oscurato dalla nostra cartella. I nostri moduli stanno in `models/mesh_wrappers/`.
 
+## 0. Su un PC nuovo (Windows, Linux, macOS): un comando
+
+```bash
+git clone https://github.com/plg2001/ondemand-mesh-vr.git && cd ondemand-mesh-vr
+./setup_pc.sh                                   # Linux / macOS   (Windows: doppio clic su setup_pc.bat)
+./setup_pc.sh --checkpoints-from /media/usb/checkpoints   # pesi da un disco esterno invece che da internet
+```
+
+`tools/setup_pc.py` prepara tutto e si può rilanciare (salta quello che è già fatto; su questo PC controlla soltanto):
+ambiente `.venv` con **Python 3.11** (con `uv`, se c'è, che scarica da solo il 3.11; altrimenti `py -3.11` /
+`python3.11`); **PyTorch 2.7.1 per la scheda del PC** (CUDA 12.8 per le RTX 50, CUDA 11.8 per le altre NVIDIA dalla
+GT 1030 alla RTX 40, CPU senza NVIDIA; `--cuda` la forza) e poi `requirements.txt`; codice dei modelli ai commit
+fissati e **pesi alle revisioni di `models/upstream.lock.json`** (stessi file su ogni PC, controllati con sha256); nuvole
+di prova e scena con le nuvole di riferimento per l'accuratezza; test. Opzioni: `--dry-run` (mostra soltanto),
+`--skip-weights`, `--no-tests`.
+
+**Pesi su disco esterno** (11 GB, utile se la rete del laboratorio è lenta o Google Drive blocca TreeMeshGPT): su questo
+PC `python tools/setup_pc.py --export-checkpoints E:/checkpoints` copia solo i 6 file dei pesi (10,6 GB, senza i
+doppioni della cache di Hugging Face); sull'altro PC `--checkpoints-from <quella cartella>` li copia e li verifica senza
+scaricare nulla. Su Ubuntu senza Python 3.11: `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt install
+python3.11 python3.11-venv`, oppure installare [uv](https://docs.astral.sh/uv/).
+
+Tutto il resto è indipendente dal sistema: percorsi relativi alla cartella del progetto, pesi e cache dentro
+`checkpoints/`, orari dei log in secondi dal 1970 (`t_epoch`) e fuso del visore registrato a ogni sessione, `adb`
+cercato nei posti usuali di Windows, Linux e macOS, lanciatori `.bat` (Windows) e `.sh` (Linux/macOS) con i fine riga
+giusti grazie a `.gitattributes`.
+
 ## 1. Ambiente (Windows 11, Python 3.11)
+
+A mano, se non si usa `setup_pc` (su questo PC è già fatto):
 
 ```powershell
 py -3.11 -m venv .venv                     # open3d 0.18 non ha wheel per Python >= 3.12
@@ -186,20 +215,31 @@ python -m benchmarks.requirements_tables --faces 400 800 1500   # tabelle memori
 python -m pytest -q tests
 ```
 
-## 7. Nodo Edge Linux (GPU NVIDIA)
+## 7. Nodo Edge Linux (GPU NVIDIA): il PC del laboratorio
 
-Sul nodo Linux gira lo stesso codice. Su GPU Ampere o successive (sm80+) si può usare il kernel FlashAttention vero:
+Sul nodo Linux gira lo stesso codice: si prepara con `./setup_pc.sh` (sezione 0). Su GPU Ampere o successive (sm80+)
+si può aggiungere il kernel FlashAttention vero (`--attn auto` lo usa se c'è, altrimenti lo shim SDPA):
 
 ```bash
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt            # oppure torch per cu121/cu124 se il driver lo richiede
-pip install flash-attn --no-build-isolation  # opzionale, solo sm80+
-python models/setup_models.py
-python -m benchmarks.run_benchmarks --modes real --device cuda --precision fp16 --repeats 3 --warmup 1 --quality
+.venv/bin/pip install flash-attn --no-build-isolation   # opzionale, solo sm80+ (compilazione lunga)
+.venv/bin/python -m benchmarks.run_benchmarks --modes real --device cuda --precision fp16 --repeats 3 --warmup 1 --quality
 ```
 
-Con `--attn auto` si usa flash-attn se presente e la GPU è sm80+, altrimenti lo shim SDPA. Su Linux il profiler
-legge anche l'energia: della GPU via NVML (Volta+) e della CPU via RAPL.
+Su Linux il profiler legge anche l'energia: della GPU via NVML (Volta+) e della CPU via RAPL.
+
+**Con il visore**, due modi:
+
+1. **Visore collegato al PC del laboratorio** (più semplice, niente rete da configurare): lì gli strumenti del Quest
+   funzionano uguali (`adb` con `sudo apt install adb`; se dice *no permissions*, una regola udev per il vendor 2833),
+   per esempio `.venv/bin/python tools/quest/quest.py session usb --server-args "--backend model --model meshanything"`.
+   Serve anche Unity solo se si vuole ricostruire l'app: l'APK già installato sul visore basta.
+2. **Visore collegato a questo portatile, server sul PC del laboratorio**: sul laboratorio
+   `./start_edge_server.sh --host 0.0.0.0 --backend model --model meshanything --save-meshes benchmarks/results/edge_meshes`
+   (con `ufw` attivo: `sudo ufw allow 8000/tcp`); sul portatile
+   `tools\quest\session_wifi.bat --server http://<indirizzo del laboratorio>:8000`. La sessione non avvia nessun
+   server, misura la differenza tra gli orologi di visore, portatile e server, e alla fine scarica dal server le righe
+   del suo log e le mesh di questa sessione (`GET /requests`, `GET /meshes/...`). Le reti universitarie spesso
+   isolano i dispositivi: se il visore non raggiunge il server, serve un router proprio (o il modo 1).
 
 ## 8. Prototipo on-demand: server Edge + client Unity
 

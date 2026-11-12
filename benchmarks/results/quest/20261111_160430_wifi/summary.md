@@ -19,6 +19,14 @@ Prima richiesta di ogni avvio dell'app (pausa > 60 s) separata dalle altre.
 
 Provenienza delle richieste secondo il server: 1 da 192.168.1.28 (Wi-Fi).
 
+## Mesh generate e accuratezza (dal server)
+
+Accuratezza rispetto alla mesh originale (nuvola densa di `build_scene.py`): F-score all'1% della diagonale, precisione (la mesh non inventa), richiamo (non dimentica), Chamfer-L2.
+
+| Oggetto | Modello | Triangoli | Server [s] | F-score | Precisione | Richiamo | Chamfer-L2 |
+|---|---|---|---|---|---|---|---|
+| box_01 | meshanything | 340 | 66.4 | – | – | – | – |
+
 ## Dall'ingresso in vista alla mesh
 
 - Dall'Edge (in ordine): box_01 34.0 s

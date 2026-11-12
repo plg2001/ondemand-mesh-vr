@@ -95,3 +95,29 @@ def test_session_bat_files_exist():
     for link in ("usb", "wifi"):
         bat = (ROOT / "tools" / "quest" / f"session_{link}.bat").read_text(encoding="utf-8")
         assert f"quest.py session {link}" in bat
+
+
+def test_adb_candidates_for_each_system(tmp_path):
+    hub = tmp_path / "Unity" / "Hub" / "Editor" / "6000.3.26f1" / "Editor" / "Data" / "PlaybackEngines" / \
+        "AndroidPlayer" / "SDK" / "platform-tools"
+    hub.mkdir(parents=True)
+    (hub / "adb").write_text("")
+    linux = quest.adb_candidates("linux", home=tmp_path, env={"ANDROID_HOME": "/opt/sdk"})
+    assert linux[0] == Path("/opt/sdk/platform-tools/adb")           # an SDK named in the environment first
+    assert linux[1] == hub / "adb"                                    # then Unity's own adb
+    assert linux[2] == tmp_path / "Android" / "Sdk" / "platform-tools" / "adb"
+    windows = quest.adb_candidates("win32", home=tmp_path, env={"LOCALAPPDATA": str(tmp_path / "Local")})
+    assert all(p.name == "adb.exe" for p in windows)
+    assert tmp_path / "Local" / "Android" / "Sdk" / "platform-tools" / "adb.exe" in windows
+    mac = quest.adb_candidates("darwin", home=tmp_path, env={})
+    assert mac[0] == tmp_path / "Library" / "Android" / "sdk" / "platform-tools" / "adb"
+
+
+def test_headset_utc_offset():
+    assert quest.headset_utc_offset(_FakeAdb(["+0100"])) == 3600
+    assert quest.headset_utc_offset(_FakeAdb(["-0530"])) == -(5 * 3600 + 30 * 60)
+    assert quest.headset_utc_offset(_FakeAdb(["date: unknown option"])) is None
+
+
+def test_server_clock_offset_without_a_server_is_none():
+    assert quest.server_clock_offset("http://127.0.0.1:9", samples=1) is None

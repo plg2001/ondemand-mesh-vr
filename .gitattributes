@@ -1,0 +1,4 @@
+# Line endings that must not depend on the PC that checks the repository out:
+# shell scripts run on Linux / macOS (LF), batch files on Windows (CRLF).
+*.sh  text eol=lf
+*.bat text eol=crlf

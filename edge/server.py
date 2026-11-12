@@ -16,6 +16,8 @@ Protocol
     GET  /shapes                          point clouds stored on the edge (data/inputs/manifest.json)
     GET  /shapes/{name}/points?points=N   float32 xyz of a stored cloud (scenario: the edge holds the scene)
     GET  /shapes/{name}/mesh?points=N     .glb reconstructed from a stored cloud
+    GET  /requests?since=<unix time>      CSV of the requests logged since then (sessions on another PC fetch it)
+    GET  /meshes/{file}                   a mesh saved with --save-meshes
 
 Coordinates: points are expressed in the frame of the files in data/inputs (right-handed, +Y up, the glTF
 frame); the mesh is returned in the same frame and glTFast converts it to Unity's frame on import.
@@ -31,7 +33,9 @@ with the original one, i.e. with the dense reference cloud that data/scenes/buil
 the bounding-box diagonal), X-Precision, X-Recall, X-Chamfer-L2 and X-Quality-Ms: the time of this evaluation, which
 is included in X-Server-Ms (subtract it for the latency of the reconstruction alone; --no-quality turns it off).
 /health also gives typical_s (median server time of the last meshes, or the mock delay) and budget_s (time budget,
-0 = none): the client's inputs for estimating how long a request will take.
+0 = none): the client's inputs for estimating how long a request will take; and server_time (seconds since 1970), so
+that a client on another PC can measure the difference between the two clocks. Every log row has t_epoch, the same
+kind of time: unlike the local "timestamp" it does not depend on the server's time zone.
 """
 from __future__ import annotations
 
@@ -39,6 +43,7 @@ import argparse
 import asyncio
 import csv
 import datetime as dt
+import io
 import json
 import re
 import statistics
@@ -50,7 +55,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import Response
+from fastapi.responses import PlainTextResponse, Response
 import numpy as np
 
 from edge import ROOT  # also puts models/ on sys.path for the mesh_wrappers imports below
@@ -65,7 +70,9 @@ SCENES = ROOT / "data" / "scenes"
 LOG_FIELDS = ["timestamp", "request_id", "source", "object_id", "status", "backend", "model", "points_in",
               "bytes_in", "bytes_out", "vertices", "triangles", "queue_ms", "preprocess_ms", "inference_ms",
               "postprocess_ms", "export_ms", "server_ms", "decode_steps", "detail", "client", "user_agent",
-              "quality_ms", "fscore", "precision", "recall", "chamfer_l2", "mesh_file"]
+              "quality_ms", "fscore", "precision", "recall", "chamfer_l2", "mesh_file", "t_epoch"]
+MESH_FILE = re.compile(r"^[A-Za-z0-9_.-]+\.glb$")
+KEEP_ROWS = 10000  # requests kept in memory for GET /requests
 
 
 class RequestLog:
@@ -124,16 +131,21 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
                   description="Sparse point cloud in, reconstructed mesh (.glb) out.")
     model_lock = asyncio.Lock()  # one reconstruction at a time: the model owns the GPU
     log = RequestLog(log_csv)
-    state = {"served": 0, "started": time.time(), "durations": []}
+    state = {"served": 0, "started": time.time(), "durations": [], "rows": []}
     describe = backend.describe()
     label = describe.get("model_display", describe["model"])
     budget_s = getattr(backend, "time_budget_s", None) or 0.0
+
+    def record(row: dict) -> None:
+        log.write(row)
+        state["rows"] = (state["rows"] + [row])[-KEEP_ROWS:]
 
     async def reconstruct_and_reply(xyz, normals, *, source: str, object_id: str, seed: int, bytes_in: int,
                                     request: Optional[Request] = None) -> Response:
         t_received = time.perf_counter()
         request_id = uuid.uuid4().hex[:8]
-        row = {"timestamp": dt.datetime.now().isoformat(timespec="milliseconds"), "request_id": request_id,
+        row = {"timestamp": dt.datetime.now().isoformat(timespec="milliseconds"), "t_epoch": f"{time.time():.3f}",
+               "request_id": request_id,
                "source": source, "object_id": object_id, "backend": describe["backend"],
                "model": describe["model"], "points_in": len(xyz), "bytes_in": bytes_in}
         if request is not None:
@@ -147,12 +159,12 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
                 glb = await asyncio.to_thread(export_glb, rec.mesh)
                 export_ms = (time.perf_counter() - t_export) * 1e3
             except ReconstructionError as e:
-                log.write(dict(row, status=f"error {e.status_code}", detail=str(e),
+                record(dict(row, status=f"error {e.status_code}", detail=str(e),
                                server_ms=_ms((time.perf_counter() - t_received) * 1e3)))
                 raise HTTPException(e.status_code, str(e)) from e
             except Exception as e:  # unexpected failure inside the model: report it instead of a bare 500
                 detail = f"{type(e).__name__}: {str(e).splitlines()[0][:300] if str(e) else ''}"
-                log.write(dict(row, status="error 500", detail=detail,
+                record(dict(row, status="error 500", detail=detail,
                                server_ms=_ms((time.perf_counter() - t_received) * 1e3)))
                 print(f"[edge] {request_id} failed: {detail}", file=sys.stderr, flush=True)
                 raise HTTPException(500, detail) from e
@@ -180,7 +192,7 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
         if quality:
             row.update(fscore=f"{quality['fscore@0.01']:.4f}", precision=f"{quality['precision']:.4f}",
                        recall=f"{quality['recall']:.4f}", chamfer_l2=f"{quality['chamfer_l2']:.6f}")
-        log.write(row)
+        record(row)
         if verbose:
             name = object_id or source
             accuracy = f", F-score {quality['fscore@0.01']:.2f}" if quality else ""
@@ -233,7 +245,7 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
         return {"status": "ok", **describe, "label": label, "requests_served": state["served"],
                 "uptime_s": round(time.time() - state["started"], 1),
                 "objects": sorted(objects) if objects is not None else "all",
-                "typical_s": round(float(typical_s), 1), "budget_s": float(budget_s),
+                "typical_s": round(float(typical_s), 1), "budget_s": float(budget_s), "server_time": time.time(),
                 "accuracy_objects": sorted(references) if references else []}
 
     @app.post("/reconstruct", response_class=Response,
@@ -251,6 +263,24 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
             raise HTTPException(400, str(e)) from e
         return await reconstruct_and_reply(xyz, normals, source="client", object_id=object_id, seed=seed,
                                            bytes_in=len(body), request=request)
+
+    @app.get("/requests", response_class=PlainTextResponse)
+    async def requests_since(since: float = 0.0) -> PlainTextResponse:
+        """The requests logged since a unix time, as CSV with the log's columns: a session run on another PC
+        fetches its own rows this way (the server's log file stays on this PC)."""
+        out = io.StringIO()
+        w = csv.DictWriter(out, fieldnames=LOG_FIELDS, extrasaction="ignore", lineterminator="\n")
+        w.writeheader()
+        w.writerows(r for r in state["rows"] if float(r.get("t_epoch") or 0) >= since)
+        return PlainTextResponse(out.getvalue(), media_type="text/csv")
+
+    @app.get("/meshes/{name}", response_class=Response,
+             responses={200: {"content": {"model/gltf-binary": {}}, "description": "a mesh saved with --save-meshes"}})
+    async def saved_mesh(name: str) -> Response:
+        path = save_meshes / name if save_meshes is not None and MESH_FILE.match(name) else None
+        if path is None or not path.is_file():
+            raise HTTPException(404, f"no saved mesh {name!r} (is the server started with --save-meshes?)")
+        return Response(content=path.read_bytes(), media_type="model/gltf-binary")
 
     @app.get("/shapes")
     async def shapes() -> dict:
@@ -334,7 +364,8 @@ def main(argv=None) -> int:
         for ip in addresses:
             print(f"[edge] reachable from the local network (e.g. the headset) at http://{ip}:{args.port}", flush=True)
         if addresses:
-            print("[edge] if Windows asks, allow Python on PRIVATE networks, or the headset cannot connect", flush=True)
+            print("[edge] if a firewall asks, allow it (Windows: Python on PRIVATE networks; Linux with ufw: "
+                  f"sudo ufw allow {args.port}/tcp), or the headset cannot connect", flush=True)
     objects = {o.strip() for o in args.objects.split(",") if o.strip()} if args.objects else None
     if objects:
         print(f"[edge] serving only: {', '.join(sorted(objects))} (other objects are refused at once)", flush=True)
