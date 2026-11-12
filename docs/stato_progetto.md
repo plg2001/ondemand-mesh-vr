@@ -228,8 +228,17 @@ Nuova build con le correzioni della sezione 6, punto 2. Due sessioni:
    potente con tutti gli oggetti. **Il progetto è pronto per un altro PC** (12 novembre): `setup_pc.sh` /
    `setup_pc.bat` lo prepara con un comando (README, sezione 0), i pesi possono arrivare da un disco esterno
    (`--export-checkpoints` qui, `--checkpoints-from` là) e il visore può stare sul PC del laboratorio oppure su questo
-   portatile con il server là (`session_wifi.bat --server http://<indirizzo>:8000`, README sezione 7). Manca ancora
-   lo script che manda tutti gli oggetti della scena al server per ogni modello, senza visore.
+   portatile con il server là (`session_wifi.bat --server http://<indirizzo>:8000`, README sezione 7). La tabella
+   della tesi (tempo, memoria e accuratezza per forma e per modello, senza visore) si fa con lo sweep della Fase 1,
+   `run_benchmarks`, sulle sei forme della scena: comando nel README, sezione 5. Da novembre misura anche con le
+   **normali stimate** dai punti (`--normals estimate`), come succede col visore: tutti i numeri della Fase 1 usano
+   invece le normali vere della mesh. **Prima prova** (12 novembre, GT 1030, MeshAnything V2, scatola della Fase 1,
+   2048 punti): con le normali vere 76 s, 336 triangoli, F-score 0,23, identico alla Fase 1; con quelle stimate la
+   generazione **non finisce** entro 240 s (2812 token contro 1596). Eppure la scatola della scena, stessa forma e
+   stesse dimensioni ma un altro campionamento di punti, con le normali stimate dal server finisce in 66 s con F-score
+   0,70 (sezione 4.4). Le normali stimate si scostano di oltre 10° da quelle vere sul 38% dei punti, sugli spigoli.
+   Conclusione provvisoria: MeshAnything reagisce molto a piccole differenze nell'ingresso, quindi in laboratorio un
+   solo run per forma non basta: servono più campionamenti dei punti e tutte e due le normali.
 4. Accuratezza e memoria con le mesh dei modelli, variando il numero di punti. **Da novembre il server misura da solo
    l'accuratezza** di ogni mesh rispetto all'originale (F-score, precisione, richiamo, Chamfer: README, sezione 8) e
    salva le mesh nella cartella della sessione; `summary.md` le riporta in una tabella. Nel visore: riga con il tempo

@@ -207,7 +207,23 @@ python -m benchmarks.requirements_tables --faces 400 800 1500   # tabelle memori
 ```
 
 - Ogni configurazione gira in un processo separato, così l'OOM di un run non interrompe lo sweep.
-- L'output va in `benchmarks/results/<timestamp>/`: `results.csv`, `results.json`, `system.json` e `summary.md`.
+- L'output va in `benchmarks/results/<timestamp>/`: `results.csv`, `results.json`, `system.json` e `summary.md`. Un
+  run che non finisce lascia il suo output in `runs/<configurazione>.log.txt` e il motivo compare a schermo.
+- Prima di partire `test_inference.py` stima la memoria necessaria e rinuncia se non basta: sulla GT 1030
+  MeshAnything V2 è appena sopra la stima (1,77 GB contro 1,60 liberi) ma in pratica ci sta, quindi qui serve
+  `--force`; sulla GPU del laboratorio no.
+- `--normals file|estimate` (anche tutti e due: una configurazione ciascuno): `file` dà ai modelli le normali vere
+  della mesh originale, `estimate` le stima dai punti con Open3D, **come fa il server per il visore**, che manda solo
+  i punti. Il default `auto` usa quelle del file (così sono stati misurati tutti i risultati della Fase 1). La tabella
+  ha una colonna *Normali*; TreeMeshGPT 7 bit non le usa.
+
+**La tabella della tesi** (sul PC del laboratorio, nessun visore): le sei forme della scena di prova (`box`, `bunny`,
+`fastmesh_001` = pupazzo, `sphere`, `tmg_cat` = gatto, `mav2_wand` = bacchetta), i tre modelli, accuratezza, normali
+vere e stimate. Circa un'ora sulla GPU:
+
+```bash
+.venv/bin/python -m benchmarks.run_benchmarks --modes real --device cuda --points 2048 --quality --time-budget-s 300 --repeats 3 --warmup 1 --shapes box bunny fastmesh_001 sphere tmg_cat mav2_wand --normals file estimate
+```
 
 ## 6. Test
 

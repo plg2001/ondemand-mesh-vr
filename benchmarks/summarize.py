@@ -34,11 +34,22 @@ def _mb(v):
     return f"{v / 2**20:.0f}" if isinstance(v, (int, float)) and v else "—"
 
 
+NORMALS_LABEL = {"file": "dalla mesh", "estimated-open3d": "stimate", "unused": "non usate", "estimate": "stimate",
+                 None: "—"}
+
+
+def _normals(r: dict):
+    """Which normals the model got: recorded by test_inference.py, or the one requested if the run crashed."""
+    return _get(r, "input.normals_source") or {"file": "file", "estimate": "estimated-open3d"}.get(
+        _get(r, "input.normals_requested"))
+
+
 def write_summary(results: list[dict], path: Path | None = None) -> str:
     groups = defaultdict(list)
     for r in results:
         key = (r.get("mode"), r.get("model"), r.get("variant", ""), r.get("device", ""), r.get("precision", ""),
-               _get(r, "input.shape"), _get(r, "input.input_points"))
+               _get(r, "input.shape"), _get(r, "input.input_points"),
+               _normals(r) if r.get("mode") == "real" else None)  # mock runs do not use the normals
         groups[key].append(r)
     lines = ["# Riepilogo benchmark", ""]
     real = [(k, v) for k, v in groups.items() if k[0] == "real"]
@@ -47,17 +58,19 @@ def write_summary(results: list[dict], path: Path | None = None) -> str:
         lines += ["## Inferenza reale", "",
                   "Run *troncati*: 64 token AR per misurare i ms/token; la colonna *Stima completa* li estrapola "
                   "a una mesh da 800 facce. Vertici, triangoli e qualità solo per generazioni complete.", "",
-                  "| Modello | Device | Prec. | Shape | Punti | Stato | Inferenza [s] | ms/token (p50) | Token | "
+                  "*Normali*: quelle vere della mesh originale (*dalla mesh*) oppure stimate dai punti come fa il "
+                  "server per il visore, che manda solo i punti (*stimate*).", "",
+                  "| Modello | Device | Prec. | Shape | Punti | Normali | Stato | Inferenza [s] | ms/token (p50) | Token | "
                   "Stima completa [s] | Picco VRAM [MB] | Picco RAM privata [MB] | Vertici | Triangoli | Chamfer-L2 | F-score@1% |",
-                  "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
-        for (mode, model, var, dev, prec, shape, pts), rs in sorted(real, key=lambda x: [str(i) for i in x[0]]):
+                  "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+        for (mode, model, var, dev, prec, shape, pts, nrm), rs in sorted(real, key=lambda x: [str(i) for i in x[0]]):
             ok = [r for r in rs if r.get("status") == "ok"]
             full = [r for r in ok if not _get(r, "generation.truncated")]  # complete meshes only
             st = ",".join(sorted({r.get("status", "?") for r in rs}))
             if ok and not full:
                 st += " (troncato)"
             lines.append("| " + " | ".join([
-                f"{model} {var}", str(dev), str(prec), str(shape), str(pts), st,
+                f"{model} {var}", str(dev), str(prec), str(shape), str(pts), NORMALS_LABEL.get(nrm, str(nrm)), st,
                 _ms([_get(r, "timings.inference_s") for r in ok]),
                 _ms([_get(r, "timings.ms_per_token_p50") for r in ok]),
                 _ms([_get(r, "timings.decode_steps") for r in ok], "{:.0f}"),
@@ -76,7 +89,7 @@ def write_summary(results: list[dict], path: Path | None = None) -> str:
                   "| Modello | Device | Punti | Parametri [M] | FLOPs/mesh [TFLOP] | Pesi fp16 [MB] | KV fp16 [MB] | "
                   "Surrogato ms/token | Decoding stimato [s] |",
                   "|---|---|---|---|---|---|---|---|---|"]
-        for (mode, model, var, dev, prec, shape, pts), rs in sorted(mock, key=lambda x: [str(i) for i in x[0]]):
+        for (mode, model, var, dev, prec, shape, pts, _nrm), rs in sorted(mock, key=lambda x: [str(i) for i in x[0]]):
             r = rs[0]
             meta = _get(r, "params.official_architecture_meta", {}) or {}
             params = meta.get("total") or _get(r, "params.analytic_total")
