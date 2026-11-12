@@ -68,22 +68,36 @@ def setup_repo(key: str, lock: dict, update: bool) -> None:
     elif update:
         git("checkout", "--quiet", "origin/HEAD", cwd=dest)
     sha = git("rev-parse", "HEAD", cwd=dest)
-    dirty = bool(git("status", "--porcelain", cwd=dest))
+    # Python's bytecode caches do not count (FastMesh even ships some .pyc files, which Python rewrites)
+    dirty = any("__pycache__" not in line and not line.endswith(".pyc")
+                for line in git("status", "--porcelain", cwd=dest).splitlines())
     lock["repos"][key] = {"dir": f"third_party/{dirname}", "url": url, "commit": sha}
     print(f"[repo]  {dirname:15s} {sha[:12]}{'  (WARNING: local modifications)' if dirty else ''}")
 
 
-def download_hf(key: str, lock: dict) -> None:
+def _check_hash(name: str, pinned: dict, sha: str) -> None:
+    if pinned.get("sha256") and pinned["sha256"] != sha:
+        print(f"[WARN]  {name}: sha256 differs from upstream.lock.json: a different or damaged file "
+              f"(copy it again, or delete it and run this again)")
+
+
+def download_hf(key: str, lock: dict, update: bool = False) -> None:
     from huggingface_hub import HfApi, hf_hub_download
 
     for repo, files in HF_WEIGHTS[key]:
-        revision = HfApi().model_info(repo).sha
+        # the revision recorded in upstream.lock.json, so that every PC gets the same weights (and the wrappers, which
+        # load that revision, find them); --update moves to the latest one. A file already in the cache at that
+        # revision is not downloaded again (no network needed).
+        pinned = {lock["weights"].get(f"{repo}/{f}", {}).get("revision") for f in files} - {None}
+        revision = pinned.pop() if len(pinned) == 1 and not update else HfApi().model_info(repo).sha
         for fname in files:
             print(f"[hf]    {repo}/{fname} @ {revision[:10]}")
             path = Path(hf_hub_download(repo, fname, revision=revision))
             entry = {"source": f"hf://{repo}/{fname}", "revision": revision, "bytes": path.stat().st_size}
             if fname.endswith(".safetensors"):
                 entry["sha256"] = sha256_file(path)
+                if not update:
+                    _check_hash(f"{repo}/{fname}", lock["weights"].get(f"{repo}/{fname}", {}), entry["sha256"])
             lock["weights"][f"{repo}/{fname}"] = entry
 
 
@@ -100,9 +114,11 @@ def download_tmg(variant: str, lock: dict) -> None:
                 f"Google Drive download failed (quota?). Download manually from "
                 f"https://drive.google.com/uc?id={TMG_GDRIVE[variant]} and save it as {dest}")
         shutil.move(out, dest)
+    sha = sha256_file(dest)
+    _check_hash(f"treemeshgpt_{variant}", lock["weights"].get(f"treemeshgpt_{variant}", {}), sha)
     lock["weights"][f"treemeshgpt_{variant}"] = {
         "source": f"gdrive://{TMG_GDRIVE[variant]}", "path": dest.relative_to(CHECKPOINTS.parent).as_posix(),
-        "bytes": dest.stat().st_size, "sha256": sha256_file(dest)}
+        "bytes": dest.stat().st_size, "sha256": sha}
     print(f"[ok]    {dest} ({dest.stat().st_size / 2**30:.2f} GB)")
 
 
@@ -126,10 +142,10 @@ def main() -> None:
         return
     for key in args.models:
         if key == "meshanything":
-            download_hf("meshanything", lock)
+            download_hf("meshanything", lock, args.update)
         elif key == "fastmesh":
             for v in args.fastmesh_variants:
-                download_hf(f"fastmesh:{v}", lock)
+                download_hf(f"fastmesh:{v}", lock, args.update)
         else:
             for v in args.tmg_variants:
                 download_tmg(v, lock)

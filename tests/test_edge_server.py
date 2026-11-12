@@ -217,3 +217,32 @@ def test_load_references_keeps_xyz(tmp_path):
     refs = load_references(tmp_path)
     assert list(refs) == ["box_01"] and refs["box_01"].shape == (10, 3)
     assert load_references(tmp_path / "missing") == {}
+
+
+def test_requests_and_saved_meshes_can_be_fetched_from_another_pc(tmp_path):
+    pytest.importorskip("httpx")
+    import csv as _csv
+    import time as _time
+
+    from fastapi.testclient import TestClient
+
+    from edge.server import create_app
+
+    app = create_app(MockBackend(), inputs_dir=tmp_path, log_csv=None, verbose=False, save_meshes=tmp_path / "m")
+    xyz, _ = sample_box(256)
+    with TestClient(app) as c:
+        before = c.get("/health").json()["server_time"]
+        assert abs(before - _time.time()) < 5
+        c.post("/reconstruct?object_id=box_01", content=encode_points(xyz))
+        c.post("/reconstruct?object_id=sphere_01", content=encode_points(xyz))
+        rows = list(_csv.DictReader(io.StringIO(c.get(f"/requests?since={before - 1}").text)))
+        assert [r["object_id"] for r in rows] == ["box_01", "sphere_01"]
+        assert all(float(r["t_epoch"]) >= before - 1 for r in rows)
+        assert c.get(f"/requests?since={_time.time() + 60}").text.count("\n") == 1  # header only
+        mesh = c.get(f"/meshes/{rows[0]['mesh_file']}")
+        assert mesh.status_code == 200 and mesh.content[:4] == b"glTF"
+        assert c.get("/meshes/missing.glb").status_code == 404
+        assert c.get("/meshes/..%2F..%2Fsecret.glb").status_code == 404
+    nothing_saved = create_app(MockBackend(), inputs_dir=tmp_path, log_csv=None, verbose=False)
+    with TestClient(nothing_saved) as c:
+        assert c.get("/meshes/a.glb").status_code == 404

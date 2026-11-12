@@ -12,7 +12,10 @@ Older folders (only the two app CSVs, from `quest.py pull`) are summarised too: 
 
 Clocks: the headset sets its clock from the network, the PC may not (Windows Time service stopped), so the two
 can differ by seconds. session.json stores the measured offset (headset - PC); without it the offset is estimated
-by matching each app request with the server row of the same object.
+by matching each app request with the server row of the same object. The app writes local times without a zone:
+session.json also stores the headset's time zone, so the report gives the same result on any machine. With the server
+on another PC (session --server) its clock offset (server - PC) is stored too, and its rows carry t_epoch (seconds
+since 1970), which does not depend on the server's time zone.
 """
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ import json
 import re
 import statistics
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -75,24 +79,57 @@ def _f(row: dict, key: str) -> Optional[float]:
         return None
 
 
-def _session_offset(session: dict) -> Optional[float]:
-    vals = [v for v in (session.get("clock_offset_s") or {}).values() if isinstance(v, (int, float))]
+def _mean_of(values: Optional[dict]) -> Optional[float]:
+    vals = [v for v in (values or {}).values() if isinstance(v, (int, float))]
     return statistics.mean(vals) if vals else None
 
 
-def _expected_server_time(h: dict, offset: float) -> float:
+def _session_offset(session: dict) -> Optional[float]:
+    return _mean_of(session.get("clock_offset_s"))
+
+
+@dataclass(frozen=True)
+class Clocks:
+    """How the logs' times become one time line (seconds since 1970).
+
+    headset_utc_offset_s: the headset's time zone, for the app's local times without zone; None = the zone of the
+    machine running this report (right when it is the PC next to the headset). server_offset_s: server clock - PC
+    clock, 0 when the server runs on the PC. Server times are moved to the PC clock."""
+    headset_utc_offset_s: Optional[float] = None
+    server_offset_s: float = 0.0
+
+    def app(self, local_iso: str) -> float:
+        t = dt.datetime.fromisoformat(local_iso)
+        if self.headset_utc_offset_s is not None and t.tzinfo is None:
+            t = t.replace(tzinfo=dt.timezone(dt.timedelta(seconds=self.headset_utc_offset_s)))
+        return t.timestamp()
+
+    def server(self, row: dict) -> float:
+        t = _f(row, "t_epoch")  # logs since November 2026; before, local time of the PC that ran the server
+        return (t if t is not None else _epoch(row["timestamp"])) - self.server_offset_s
+
+
+NO_INFO = Clocks()
+
+
+def clocks_of(session: dict) -> Clocks:
+    return Clocks(session.get("headset_utc_offset_s"), _mean_of(session.get("server_clock_offset_s")) or 0.0)
+
+
+def _expected_server_time(h: dict, offset: float, clocks: Clocks = NO_INFO) -> float:
     """PC time at which the server logged the request (body received) of app row h (logged after the load)."""
     after_body_ms = (_f(h, "server_ms") or 0) + (_f(h, "network_ms") or 0) / 2 + (_f(h, "load_ms") or 0)
-    return _epoch(h["timestamp"]) - offset - after_body_ms / 1e3
+    return clocks.app(h["timestamp"]) - offset - after_body_ms / 1e3
 
 
-def estimate_offset(app_rows: list[dict], server_rows: list[dict], window_s: float = 120.0) -> Optional[float]:
+def estimate_offset(app_rows: list[dict], server_rows: list[dict], window_s: float = 120.0,
+                    clocks: Clocks = NO_INFO) -> Optional[float]:
     """headset - PC clock offset from same-object pairs: the densest 1 s cluster of differences, its median."""
     diffs = []
     for h in app_rows:
         for s in server_rows:
             if s.get("object_id") == h.get("label") and s.get("status", "ok") == "ok":
-                d = _expected_server_time(h, 0.0) - _epoch(s["timestamp"])
+                d = _expected_server_time(h, 0.0, clocks) - clocks.server(s)
                 if abs(d) <= window_s:
                     diffs.append(d)
     if not diffs:
@@ -103,16 +140,16 @@ def estimate_offset(app_rows: list[dict], server_rows: list[dict], window_s: flo
 
 
 def match_server_rows(app_rows: list[dict], server_rows: list[dict], offset: float,
-                      tolerance_s: float = 1.0) -> list[Optional[dict]]:
+                      tolerance_s: float = 1.0, clocks: Clocks = NO_INFO) -> list[Optional[dict]]:
     """For every app request the server row of the same object nearest to the expected time (or None)."""
     used, out = set(), []
     for h in app_rows:
-        t = _expected_server_time(h, offset)
+        t = _expected_server_time(h, offset, clocks)
         best, best_d = None, tolerance_s
         for i, s in enumerate(server_rows):
             if i in used or s.get("object_id") != h.get("label"):
                 continue
-            d = abs(_epoch(s["timestamp"]) - t)
+            d = abs(clocks.server(s) - t)
             if d <= best_d:
                 best, best_d = i, d
         if best is not None:
@@ -160,16 +197,17 @@ def summarize(folder: Path) -> str:
     server = _read_csv(folder / "edge_requests.csv")
     fps = _read_csv(folder / "fps.csv")
 
+    clocks = clocks_of(session)
     offset = _session_offset(session)
     offset_note = "misurato con adb" if offset is not None else None
     if offset is None:
-        offset = estimate_offset(app, server)
+        offset = estimate_offset(app, server, clocks=clocks)
         offset_note = "stimato abbinando le richieste al log del server" if offset is not None else None
 
     start, end = session.get("started_pc"), session.get("ended_pc")
     if start and end and offset is not None:  # the app CSVs are cumulative: keep this session only
-        app = [r for r in app if start + offset <= _epoch(r["timestamp"]) <= end + offset + 5]
-        events = [r for r in events if start + offset <= _epoch(r["timestamp"]) <= end + offset + 5]
+        app = [r for r in app if start + offset <= clocks.app(r["timestamp"]) <= end + offset + 5]
+        events = [r for r in events if start + offset <= clocks.app(r["timestamp"]) <= end + offset + 5]
 
     lines = [f"# Sessione Quest: {folder.name}", ""]
     link = session.get("link")
@@ -180,6 +218,10 @@ def summarize(folder: Path) -> str:
                      "orologio del PC)")
     if offset is not None:
         lines.append(f"- Orologio del visore - orologio del PC: {offset:+.2f} s ({offset_note})")
+    if session.get("server_remote"):
+        info = session.get("server") or {}
+        lines.append(f"- Server su un altro PC: {info.get('label', '?')} su {info.get('device_name', '?')}; "
+                     f"orologio del server - orologio del PC: {clocks.server_offset_s:+.2f} s")
     measured = session.get("clock_offset_s") or {}
     if all(isinstance(measured.get(k), (int, float)) for k in ("start", "end")) and \
             abs(measured["end"] - measured["start"]) > CLOCK_JUMP_S:
@@ -206,7 +248,7 @@ def summarize(folder: Path) -> str:
             lines.append(f"| {label} | {_range(a)} | {_range(b)} |")
         lines.append("")
         if offset is not None and server:
-            matched = match_server_rows(app, server, offset)
+            matched = match_server_rows(app, server, offset, clocks=clocks)
             clients = {}
             for s in matched:
                 key = s.get("client") or "" if s else None
@@ -257,8 +299,8 @@ def summarize(folder: Path) -> str:
         if steady:
             f_vals = [_f(r, "fps") for r in steady]
             low = sum(1 for v in f_vals if v is not None and v < 0.9 * target)
-            edge_t = [_epoch(e["timestamp"]) for e in edge_ev]
-            cache_t = [_epoch(e["timestamp"]) for e in cache_ev]
+            edge_t = [clocks.app(e["timestamp"]) for e in edge_ev]
+            cache_t = [clocks.app(e["timestamp"]) for e in cache_ev]
 
             def after(times, r):  # the sample's second overlaps the 2 s after a mesh was shown
                 return any(0.0 <= float(r["headset_time"]) - t <= MESH_WINDOW_S for t in times)

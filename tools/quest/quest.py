@@ -1,6 +1,6 @@
 """Helpers to test the Unity app on a Meta Quest connected to this PC with a USB cable (adb).
 
-Double-click the .bat files next to this script, or run from the repository root:
+Windows: double-click the .bat files next to this script. Any system (Windows, Linux, macOS), from the repository root:
     python tools/quest/quest.py check          # headset connected and authorised? Android recent enough? app installed?
     python tools/quest/quest.py install        # install Builds/OnDemandMeshVR.apk (--run also starts it)
     python tools/quest/quest.py usb --serve    # the app reaches the edge server through the cable; start the server
@@ -19,6 +19,13 @@ app, records the headset's frame rate (VrApi lines in logcat, one per second) wh
 press Enter copies everything to benchmarks/results/quest/<timestamp>_<link>/ and writes summary.md
 (benchmarks/quest_report.py). In wifi mode the cable stays plugged in, but only for the fps log: the USB tunnel is
 removed, so the app's requests really travel over the Wi-Fi (the server log records the address they came from).
+`session wifi --server http://<ip>:8000` uses an edge server already running on another PC (e.g. the lab's GPU
+machine, started there with --host 0.0.0.0): it is not started here, and at the end its log rows and saved meshes
+of this session are fetched over HTTP (GET /requests, /meshes). The clocks of headset, this PC and that server are
+all measured, so the summary lines them up even if the three differ or sit in different time zones.
+
+adb: from PATH, ANDROID_SDK_ROOT / ANDROID_HOME, the usual Android SDK folder, Meta Quest Developer Hub or the one in
+Unity's Android Build Support, on Windows, Linux and macOS (Linux: `sudo apt install adb` is enough).
 """
 from __future__ import annotations
 
@@ -48,23 +55,52 @@ from benchmarks.quest_report import FPS_FIELDS, parse_vrapi_line, write_report  
 PROJECT_SETTINGS = ROOT / "unity" / "OnDemandMeshVR" / "ProjectSettings" / "ProjectSettings.asset"
 OVERRIDE_FILE = "edge_server.txt"  # must match EdgeClient.ServerOverrideFile
 RESULT_FILES = ("edge_timings.csv", "ondemand_events.csv")
-UNITY_EDITORS = Path("C:/Program Files/Unity/Hub/Editor")
+ADB = "adb.exe" if os.name == "nt" else "adb"
 GUIDE = "README.md, section 8"
+DEFAULT_SERVER_ARGS = "--mock-delay-s 2"
 QUEST_RESULTS = ROOT / "benchmarks" / "results" / "quest"
 SERVER_LOG = ROOT / "benchmarks" / "results" / "tmp" / "edge_requests.csv"  # edge.server's default --log-csv
 APK = ROOT / "unity" / "OnDemandMeshVR" / "Builds" / "OnDemandMeshVR.apk"  # written by Unity: Tools > Quest
 
 
 # ----------------------------------------------------------------------------- discovery
+def adb_candidates(platform: str = sys.platform, home: Optional[Path] = None,
+                   env: Optional[dict] = None) -> list[Path]:
+    """Places where adb usually is, in order of preference, for 'win32', 'linux' or 'darwin'."""
+    home = home or Path.home()
+    env = os.environ if env is None else env
+    exe = "adb.exe" if platform == "win32" else "adb"
+    sdks = [Path(env[v]) for v in ("ANDROID_SDK_ROOT", "ANDROID_HOME") if env.get(v)]
+    if platform == "win32":
+        local = Path(env.get("LOCALAPPDATA") or home / "AppData" / "Local")
+        sdks.append(local / "Android" / "Sdk")
+        hubs = [Path(env.get("ProgramFiles") or "C:/Program Files") / "Unity" / "Hub" / "Editor"]
+        unity_tail = "*/Editor/Data/PlaybackEngines/AndroidPlayer/SDK/platform-tools/adb.exe"
+        extra = [Path(env.get("ProgramFiles") or "C:/Program Files") / "Meta Quest Developer Hub" / "resources" / "bin" / exe]
+    elif platform == "darwin":
+        sdks.append(home / "Library" / "Android" / "sdk")
+        hubs = [Path("/Applications/Unity/Hub/Editor")]
+        unity_tail = "*/PlaybackEngines/AndroidPlayer/SDK/platform-tools/adb"
+        extra = [Path("/Applications/Meta Quest Developer Hub.app/Contents/Resources/bin/adb")]
+    else:
+        sdks.append(home / "Android" / "Sdk")
+        hubs = [home / "Unity" / "Hub" / "Editor"]
+        unity_tail = "*/Editor/Data/PlaybackEngines/AndroidPlayer/SDK/platform-tools/adb"
+        extra = []
+    # an SDK named in the environment, then Unity's own adb (the editor runs that one: mixing two adb versions makes
+    # them kill each other's server), then the default SDK folder and Meta Quest Developer Hub
+    found = [sdk / "platform-tools" / exe for sdk in sdks[:-1]]
+    for hub in hubs:  # newest editor first
+        found += sorted(hub.glob(unity_tail), reverse=True) if hub.exists() else []
+    return found + [sdks[-1] / "platform-tools" / exe] + extra
+
+
 def find_adb() -> Optional[str]:
-    """adb from PATH, ANDROID_SDK_ROOT / ANDROID_HOME, or the one shipped with Unity's Android Build Support."""
-    candidates = [shutil.which("adb")]
-    for var in ("ANDROID_SDK_ROOT", "ANDROID_HOME"):
-        if os.environ.get(var):
-            candidates.append(str(Path(os.environ[var]) / "platform-tools" / "adb.exe"))
-    candidates += [str(p) for p in sorted(
-        UNITY_EDITORS.glob("*/Editor/Data/PlaybackEngines/AndroidPlayer/SDK/platform-tools/adb.exe"), reverse=True)]
-    return next((c for c in candidates if c and Path(c).exists()), None)
+    """adb from PATH, else the first of adb_candidates() that exists."""
+    on_path = shutil.which("adb")
+    if on_path:
+        return on_path
+    return next((str(c) for c in adb_candidates() if c.exists()), None)
 
 
 def project_android_settings(text: Optional[str] = None) -> tuple[Optional[str], Optional[int]]:
@@ -327,6 +363,65 @@ def clock_offset(adb: Adb, samples: int = 5) -> Optional[float]:
     return None if best is None else round(best[1], 3)
 
 
+def headset_utc_offset(adb: Adb) -> Optional[int]:
+    """Time zone of the headset in seconds (e.g. +3600 for +0100): the app writes local times without a zone."""
+    out = adb.shell("date", "+%z").strip()
+    if len(out) == 5 and out[0] in "+-" and out[1:].isdigit():
+        seconds = int(out[1:3]) * 3600 + int(out[3:5]) * 60
+        return seconds if out[0] == "+" else -seconds
+    return None
+
+
+def server_clock_offset(base_url: str, samples: int = 5) -> Optional[float]:
+    """Server clock - PC clock in seconds (GET /health server_time, the sample with the shortest round trip)."""
+    best = None
+    for _ in range(samples):
+        t0 = time.time()
+        try:
+            with urllib.request.urlopen(f"{base_url}/health", timeout=5) as r:
+                server_time = json.loads(r.read().decode("utf-8")).get("server_time")
+        except (OSError, ValueError):
+            continue
+        t1 = time.time()
+        if isinstance(server_time, (int, float)) and (best is None or t1 - t0 < best[0]):
+            best = (t1 - t0, server_time - (t0 + t1) / 2)
+    return None if best is None else round(best[1], 3)
+
+
+def server_health(base_url: str) -> dict:
+    try:
+        with urllib.request.urlopen(f"{base_url}/health", timeout=5) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def fetch_server_rows(base_url: str, since_server_time: float, dest: Path) -> int:
+    """The rows the server logged since a time of ITS clock (GET /requests), saved as a CSV: number of rows."""
+    with urllib.request.urlopen(f"{base_url}/requests?since={since_server_time:.3f}", timeout=30) as r:
+        text = r.read().decode("utf-8")
+    dest.write_text(text, encoding="utf-8", newline="")
+    return max(0, len([line for line in text.splitlines() if line.strip()]) - 1)
+
+
+def fetch_meshes(base_url: str, server_log: Path, dest: Path) -> int:
+    """The meshes listed in the rows (mesh_file), from GET /meshes/<file>: number fetched."""
+    if not server_log.exists():
+        return 0
+    with server_log.open(encoding="utf-8", newline="") as f:
+        names = [r.get("mesh_file") for r in csv.DictReader(f) if r.get("mesh_file")]
+    fetched = 0
+    for name in names:
+        try:
+            with urllib.request.urlopen(f"{base_url}/meshes/{name}", timeout=30) as r:
+                dest.mkdir(parents=True, exist_ok=True)
+                (dest / name).write_bytes(r.read())
+                fetched += 1
+        except OSError:
+            pass  # the server was started without --save-meshes
+    return fetched
+
+
 class FpsRecorder:
     """Follows `adb logcat -v epoch -s VrApi` and appends one fps.csv row per FPS line, with the process name
     (several processes log VrApi lines: the system menu at 90 Hz, the app at 72 Hz, ...)."""
@@ -412,12 +507,29 @@ def cmd_session(adb: Adb, args) -> int:
         print(f"Cannot read the app's package name from {PROJECT_SETTINGS}")
         return 1
     if f"package:{package}" not in adb.shell("pm", "list", "packages", package).split():
-        print(f"The app {package} is not installed: run install_app.bat first.")
+        print(f"The app {package} is not installed: install it first (install_app.bat, or "
+              f"python tools/quest/quest.py install).")
         return 1
 
     # 1. link
     local = f"http://127.0.0.1:{args.port}"
-    if args.link == "usb":
+    remote = args.server.rstrip("/") if args.server else None
+    if remote:
+        if args.link != "wifi":
+            print("--server needs the wifi link: the USB tunnel only reaches this PC.")
+            return 1
+        if not server_answers(remote):
+            print(f"No edge server answers at {remote}. Start it on that PC, reachable from the network:\n"
+                  f"  python -m edge.server --host 0.0.0.0 --save-meshes benchmarks/results/edge_meshes ...")
+            return 1
+        if args.server_args != DEFAULT_SERVER_ARGS:
+            print("Note: --server-args is ignored with --server (the server is already running there).")
+        url, host = remote, None
+        if not write_server_address(adb, url):  # also removes the USB tunnel
+            return 1
+        print(f"link: Wi-Fi to the edge server on another PC, {url}. Keep the cable plugged in: it carries the fps "
+              f"log.")
+    elif args.link == "usb":
         r = adb.run("reverse", f"tcp:{args.port}", f"tcp:{args.port}")
         if r.returncode != 0:
             print(f"adb reverse failed: {r.stderr.strip()}")
@@ -444,10 +556,15 @@ def cmd_session(adb: Adb, args) -> int:
     offset_start = clock_offset(adb)
     if offset_start is not None:
         print(f"headset clock - PC clock: {offset_start:+.2f} s (stored; the summary corrects for it)")
+    server_offset_start = server_clock_offset(remote) if remote else None
+    if server_offset_start is not None:
+        print(f"server clock - PC clock: {server_offset_start:+.2f} s (stored; the summary corrects for it)")
 
     # 2. server, with a log of its own when this session starts it
     server_proc, server_log = None, dest / "edge_requests.csv"
-    if server_answers(local):
+    if remote:
+        pass  # running on the other PC
+    elif server_answers(local):
         if args.link == "wifi" and not server_answers(url):
             print("An edge server is running but only for this PC (127.0.0.1): close its window, then run this again.")
             return 1
@@ -497,7 +614,16 @@ def cmd_session(adb: Adb, args) -> int:
 
     # 4. results
     offset_end = clock_offset(adb)
-    if server_proc:
+    server_offset_end = server_clock_offset(remote) if remote else None
+    if remote:
+        shift = server_offset_start if server_offset_start is not None else 0.0
+        try:
+            n = fetch_server_rows(remote, started + shift - 5, server_log)
+            print(f"fetched {n} rows of the server log from {remote}")
+            print(f"fetched {fetch_meshes(remote, server_log, dest / 'meshes')} meshes")
+        except OSError as e:
+            print(f"Could not fetch the server log from {remote}: {e}")
+    elif server_proc:
         server_proc.terminate()
         server_proc.wait(timeout=10)
     else:
@@ -507,7 +633,15 @@ def cmd_session(adb: Adb, args) -> int:
     session = {"link": args.link, "server_url": url, "package": package, "headset": model,
                "started_pc": started, "ended_pc": ended,
                "clock_offset_s": {"start": offset_start, "end": offset_end},
-               "server_args": args.server_args, "app_restarted": not args.no_restart, "fps_rows": fps.rows}
+               "headset_utc_offset_s": headset_utc_offset(adb),
+               "server_args": "(server on another PC)" if remote else args.server_args,
+               "app_restarted": not args.no_restart, "fps_rows": fps.rows}
+    if remote:
+        info = server_health(remote)
+        session.update(server_remote=True, server_clock_offset_s={"start": server_offset_start,
+                                                                   "end": server_offset_end},
+                       server={k: info.get(k) for k in ("label", "backend", "model", "device_name", "precision",
+                                                        "budget_s", "objects") if k in info})
     (dest / "session.json").write_text(json.dumps(session, indent=2), encoding="utf-8")
     out = write_report(dest)
     print(f"\nsaved in {dest}")
@@ -533,7 +667,9 @@ def main(argv=None) -> int:
     sub.add_parser("pull", help="copy the CSV timings from the headset")
     p = sub.add_parser("session", help="one measured session: link, server, fps, results and summary")
     p.add_argument("link", choices=("usb", "wifi"), help="how the app reaches the edge server")
-    p.add_argument("--server-args", default="--mock-delay-s 2", help="options for edge.server (default: mock, 2 s)")
+    p.add_argument("--server-args", default=DEFAULT_SERVER_ARGS, help="options for edge.server (default: mock, 2 s)")
+    p.add_argument("--server", default=None,
+                   help="wifi: use the edge server already running on another PC, e.g. http://192.168.1.50:8000")
     p.add_argument("--ip", default=None, help="wifi: this PC's address to give the headset (default: detected)")
     p.add_argument("--no-restart", action="store_true", help="do not restart the app at the start of the session")
     args = ap.parse_args(argv)
@@ -541,7 +677,8 @@ def main(argv=None) -> int:
     adb_path = find_adb()
     if adb_path is None:
         print("adb not found. It comes with Unity's Android Build Support (Unity Hub > Installs > Add modules), "
-              f"or with Meta Quest Developer Hub. See {GUIDE}")
+              "with Meta Quest Developer Hub or with the Android platform-tools (Linux: sudo apt install adb; then, "
+              "if it says 'no permissions', add a udev rule for vendor 2833). " + f"See {GUIDE}")
         return 1
     commands = {"check": cmd_check, "install": cmd_install, "usb": cmd_usb, "wifi": cmd_wifi, "logs": cmd_logs,
                 "pull": cmd_pull, "session": cmd_session}

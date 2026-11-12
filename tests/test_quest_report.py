@@ -124,3 +124,29 @@ def test_summary_lists_accuracy_and_failures(tmp_path):
     text = summarize(tmp_path)
     assert "| obj0 | meshanything | 340 | 66.4 | 0.70 | 0.60 | 0.85 | 0.00101 |" in text
     assert "82 ms" in text and "obj1 (error 504, dopo 121.7 s)" in text
+
+
+def test_clocks_line_up_a_server_on_another_pc_in_another_time_zone(tmp_path):
+    from benchmarks.quest_report import Clocks
+
+    headset_tz = 3600.0                      # the headset writes local times at UTC+1
+    server_ahead = 7.5                       # the lab PC's clock is 7.5 s ahead of this PC
+    app, server = _rows(3, offset=0.0)       # app rows logged on the headset clock = PC clock here
+    clocks = Clocks(headset_utc_offset_s=headset_tz, server_offset_s=server_ahead)
+    for s in server:                         # the server logs its own clock as t_epoch, and a UTC local time
+        t_pc = Clocks(headset_utc_offset_s=headset_tz).app(s["timestamp"])
+        s["t_epoch"] = f"{t_pc + server_ahead:.3f}"
+        s["timestamp"] = "2000-01-01T00:00:00.000"   # nonsense: must not be used when t_epoch is there
+    matched = match_server_rows(app, server, 0.0, clocks=clocks)
+    assert [m["object_id"] for m in matched] == ["obj0", "obj1", "obj2"]
+    assert abs(estimate_offset(app, server, clocks=clocks)) < 0.01
+
+
+def test_summary_of_a_session_with_the_server_on_another_pc(tmp_path):
+    app, server = _rows(2)
+    _write(tmp_path / "edge_timings.csv", app)
+    (tmp_path / "session.json").write_text(json.dumps(
+        {"link": "wifi", "server_remote": True, "server_clock_offset_s": {"start": 2.0, "end": 2.2},
+         "server": {"label": "MeshAnything V2", "device_name": "NVIDIA GeForce RTX 4090"}}))
+    text = summarize(tmp_path)
+    assert "Server su un altro PC: MeshAnything V2 su NVIDIA GeForce RTX 4090" in text and "+2.10 s" in text

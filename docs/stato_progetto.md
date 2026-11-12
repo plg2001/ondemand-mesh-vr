@@ -202,6 +202,9 @@ Nuova build con le correzioni della sezione 6, punto 2. Due sessioni:
 - **Cavo contro Wi-Fi**: c'è una sola sessione per collegamento (5 richieste dopo la prima), con il backend mock, in un
   solo posto e momento (distanza dal router non annotata). Non provati: più sessioni, distanza, rete carica, mesh più grandi dei modelli veri.
 - Il **tracciamento delle mani** (attivo nel progetto per Android).
+- **Un altro PC**: `setup_pc` è stato provato solo qui (prova a vuoto, e verifica dei pesi senza rete: 35 s, nessun
+  download, checksum uguali al lock); mai su Linux né su un PC nuovo. La sessione con `--server` è stata provata con
+  server e client sullo stesso PC (scaricamento di righe e mesh, orologi), non ancora con due PC.
 - Le nuvole sono **pulite** (campionate da mesh esistenti, senza rumore né buchi, normali stimate dal server):
   l'obiettivo reale potrebbe avere scansioni peggiori.
 - I materiali generati hanno bisogno di *Render Face = Both* (le facce prodotte non hanno un'orientazione coerente
@@ -222,12 +225,16 @@ Nuova build con le correzioni della sezione 6, punto 2. Due sessioni:
    "replay" che restituisce mesh già generate con ritardi realistici, per le dimostrazioni.
 3. Modello vero con il visore: fatto per la scatola con MeshAnything V2 (sezione 4.4, comando nel README). Restano
    gli altri modelli, la mesh completa di TreeMeshGPT e soprattutto il PC del laboratorio, per i numeri sulla GPU
-   potente con tutti gli oggetti.
+   potente con tutti gli oggetti. **Il progetto è pronto per un altro PC** (12 novembre): `setup_pc.sh` /
+   `setup_pc.bat` lo prepara con un comando (README, sezione 0), i pesi possono arrivare da un disco esterno
+   (`--export-checkpoints` qui, `--checkpoints-from` là) e il visore può stare sul PC del laboratorio oppure su questo
+   portatile con il server là (`session_wifi.bat --server http://<indirizzo>:8000`, README sezione 7). Manca ancora
+   lo script che manda tutti gli oggetti della scena al server per ogni modello, senza visore.
 4. Accuratezza e memoria con le mesh dei modelli, variando il numero di punti. **Da novembre il server misura da solo
    l'accuratezza** di ogni mesh rispetto all'originale (F-score, precisione, richiamo, Chamfer: README, sezione 8) e
    salva le mesh nella cartella della sessione; `summary.md` le riporta in una tabella. Nel visore: riga con il tempo
-   trascorso e la stima di quanto manca sul pannello, etichetta con l'accuratezza sopra ogni oggetto (da provare
-   con la prossima build). Riferimento minimo (sessione mock `20261112_113036_wifi`), F-score / Chamfer-L2 dell'involucro convesso: sfera
+   trascorso e la stima di quanto manca sul pannello, etichetta con l'accuratezza sopra ogni oggetto (viste sul
+   visore e nel simulatore). Riferimento minimo (sessione mock `20261112_113036_wifi`), F-score / Chamfer-L2 dell'involucro convesso: sfera
    1,00 / 0,00003, scatola 0,98 / 0,00005 (forme convesse: l'involucro è già la risposta giusta), coniglio 0,39 /
    0,0034, bacchetta 0,31 / 0,0023, pupazzo 0,26 / 0,0041, gatto 0,16 / 0,0072. Per confronto, forme volutamente
    sbagliate sul coniglio: triangoli a caso nel suo riquadro 0,15 / 0,0057, ellissoide 0,11 / 0,0121, scatola 0,06 /
@@ -251,15 +258,23 @@ laboratorio (offerto, "se non si riesce con il tuo").
   di Unity (4 GB e in crescita) il progetto supera i 20 GB; su GitHub ne finiscono circa 100 MB.
 - Quest 2 con Android 14 (API 34). **Un controller ha lo stick difettoso (deriva)**: mai dipendere dall'analogico;
   si cammina e si gira fisicamente. Il gamepad PS4 è stato considerato e rimandato.
-- Il file `unity/OnDemandMeshVR/ProjectSettings/UnityConnectSettings.asset` risulta modificato da Unity (servizi
-  attivati) e **non è stato committato di proposito**.
+- Tre file che Unity modifica da solo **non vanno committati**: `UnityConnectSettings.asset` (servizi online
+  attivati), `ProjectSettings.asset` (lista `preloadedAssets` svuotata dal gestore XR) e
+  `Assets/XR/Settings/OpenXRPackageSettings.asset` (identificativi rinumerati). Si scartano con Unity chiuso.
+- **Portabilità** (12 novembre): niente dipende più da questo PC. Percorsi relativi al progetto, pesi e cache in
+  `checkpoints/` alle revisioni di `models/upstream.lock.json` (prima `setup_models.py` scaricava l'ultima versione
+  da Hugging Face, mentre i wrapper caricano quella fissata), `adb` cercato su Windows, Linux e macOS, lanciatori
+  `.bat` e `.sh` con i fine riga fissati da `.gitattributes`, orari dei log assoluti (`t_epoch`) e fuso del visore
+  registrato, così i riassunti escono uguali su qualunque PC.
 - Documentazione e README in italiano, codice e commenti in inglese. Lo studente non conosceva Unity né i visori:
   spiegare i passaggi uno per uno, nominare ogni file e dire sempre cosa è **verificato** e cosa è solo previsto.
 
 ## 8. Comandi utili
 
 ```powershell
-python -m pytest -q tests                      # 65 test, senza pesi né GPU
+python -m pytest -q tests                      # 82 test, senza pesi né GPU
+setup_pc.bat                                   # prepara o controlla il PC (Linux/macOS: ./setup_pc.sh)
+python tools\setup_pc.py --export-checkpoints E:\checkpoints   # pesi su disco esterno per un altro PC
 start_edge_server.bat                          # server mock per le prove nell'editor
 tools\quest\check_headset.bat                  # il Quest è collegato e autorizzato?
 tools\quest\server_usb.bat                     # server + collegamento via cavo (prima prova)
@@ -267,6 +282,7 @@ tools\quest\server_wifi.bat                    # server raggiungibile dal Wi-Fi
 tools\quest\install_app.bat                    # installa Builds\OnDemandMeshVR.apk
 tools\quest\pull_results.bat                   # copia i CSV dei tempi dal visore
 tools\quest\session_usb.bat                    # sessione di misura via cavo (anche session_wifi.bat)
+tools\quest\session_wifi.bat --server http://<ip>:8000   # sessione con il server su un altro PC
 python -m benchmarks.quest_report <cartella>   # rigenera summary.md di una cartella in benchmarks/results/quest
 python data\scenes\build_scene.py              # rigenera la scena di prova
 ```
