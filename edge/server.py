@@ -5,6 +5,7 @@ Run from the repository root:
     python -m edge.server --mock-delay-s 3                     # mock + 3 s of simulated inference per request
     python -m edge.server --backend model --model meshanything # real model (weights in checkpoints/)
     python -m edge.server --host 0.0.0.0                       # reachable from other devices on the LAN (Quest)
+    python -m edge.server --save-meshes out/meshes             # also keep every mesh sent, as .glb
 
 Interactive API docs (try every endpoint from the browser): http://127.0.0.1:8000/docs
 
@@ -23,6 +24,14 @@ Timing headers, in milliseconds: X-Queue-Ms (waiting for the model: one reconstr
 X-Preprocess-Ms, X-Inference-Ms, X-Postprocess-Ms, X-Export-Ms and X-Server-Ms (total, from the moment the
 request body has been received to the moment the response is ready). On the client,
 round-trip time - X-Server-Ms = network transfer + HTTP overhead.
+
+Accuracy: when the object id is one of the scene's objects (--scene, default demo_room) the server compares the mesh
+with the original one, i.e. with the dense reference cloud that data/scenes/build_scene.py samples from it
+(data/scenes/<scene>/<id>_ref.npy, same local frame as the points and the mesh). Headers X-FScore (F-score at 1% of
+the bounding-box diagonal), X-Precision, X-Recall, X-Chamfer-L2 and X-Quality-Ms: the time of this evaluation, which
+is included in X-Server-Ms (subtract it for the latency of the reconstruction alone; --no-quality turns it off).
+/health also gives typical_s (median server time of the last meshes, or the mock delay) and budget_s (time budget,
+0 = none): the client's inputs for estimating how long a request will take.
 """
 from __future__ import annotations
 
@@ -31,6 +40,8 @@ import asyncio
 import csv
 import datetime as dt
 import json
+import re
+import statistics
 import sys
 import threading
 import time
@@ -40,17 +51,21 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import Response
+import numpy as np
 
 from edge import ROOT  # also puts models/ on sys.path for the mesh_wrappers imports below
 from edge.reconstruction import (MockBackend, ModelBackend, Reconstruction, ReconstructionError, decode_points,
                                  encode_points, export_glb)
+from mesh_wrappers.mesh_io import quality_metrics
 from mesh_wrappers.pointcloud import load_pointcloud
 
 DATA_INPUTS = ROOT / "data" / "inputs"
 DEFAULT_LOG = ROOT / "benchmarks" / "results" / "tmp" / "edge_requests.csv"
+SCENES = ROOT / "data" / "scenes"
 LOG_FIELDS = ["timestamp", "request_id", "source", "object_id", "status", "backend", "model", "points_in",
               "bytes_in", "bytes_out", "vertices", "triangles", "queue_ms", "preprocess_ms", "inference_ms",
-              "postprocess_ms", "export_ms", "server_ms", "decode_steps", "detail", "client", "user_agent"]
+              "postprocess_ms", "export_ms", "server_ms", "decode_steps", "detail", "client", "user_agent",
+              "quality_ms", "fscore", "precision", "recall", "chamfer_l2", "mesh_file"]
 
 
 class RequestLog:
@@ -89,16 +104,30 @@ def _ms(x: Optional[float]) -> str:
     return "" if x is None else f"{x:.1f}"
 
 
+def load_references(scene_dir: Path) -> dict[str, np.ndarray]:
+    """object id -> dense reference cloud (N x 3) sampled from the object's original mesh by build_scene.py."""
+    return {f.name[:-len("_ref.npy")]: np.load(f)[:, :3] for f in sorted(scene_dir.glob("*_ref.npy"))}
+
+
+def _safe_name(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", text)[:60] or "mesh"
+
+
 def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] = DEFAULT_LOG,
-               verbose: bool = True, objects: Optional[set[str]] = None) -> FastAPI:
+               verbose: bool = True, objects: Optional[set[str]] = None,
+               references: Optional[dict[str, np.ndarray]] = None, save_meshes: Optional[Path] = None) -> FastAPI:
     """objects: if given, POST /reconstruct serves only these object ids and refuses the others at once (HTTP 409,
-    not logged), so that on a slow edge the client's queue is not blocked by objects that cannot finish."""
+    not logged), so that on a slow edge the client's queue is not blocked by objects that cannot finish.
+    references: object id -> dense reference cloud of the original mesh: the accuracy of each mesh sent is measured.
+    save_meshes: folder where every mesh sent is also written, as <request id>_<object id>.glb."""
     app = FastAPI(title="ondemand-mesh-vr edge server", version="0.1.0",
                   description="Sparse point cloud in, reconstructed mesh (.glb) out.")
     model_lock = asyncio.Lock()  # one reconstruction at a time: the model owns the GPU
     log = RequestLog(log_csv)
-    state = {"served": 0, "started": time.time()}
+    state = {"served": 0, "started": time.time(), "durations": []}
     describe = backend.describe()
+    label = describe.get("model_display", describe["model"])
+    budget_s = getattr(backend, "time_budget_s", None) or 0.0
 
     async def reconstruct_and_reply(xyz, normals, *, source: str, object_id: str, seed: int, bytes_in: int,
                                     request: Optional[Request] = None) -> Response:
@@ -127,22 +156,40 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
                                server_ms=_ms((time.perf_counter() - t_received) * 1e3)))
                 print(f"[edge] {request_id} failed: {detail}", file=sys.stderr, flush=True)
                 raise HTTPException(500, detail) from e
+        # outside the model lock: the next reconstruction does not wait for the evaluation
+        quality, quality_ms = None, None
+        reference = references.get(object_id) if references else None
+        if reference is not None:
+            t_quality = time.perf_counter()
+            quality = await asyncio.to_thread(quality_metrics, rec.mesh, reference)
+            quality_ms = (time.perf_counter() - t_quality) * 1e3
+        mesh_file = ""
+        if save_meshes is not None:
+            save_meshes.mkdir(parents=True, exist_ok=True)
+            mesh_file = f"{request_id}_{_safe_name(object_id or source)}.glb"
+            (save_meshes / mesh_file).write_bytes(glb)
         server_ms = (time.perf_counter() - t_received) * 1e3
         queue_ms = (t_start - t_received) * 1e3
         tm = rec.timings_ms
         state["served"] += 1
+        state["durations"] = (state["durations"] + [server_ms / 1e3])[-10:]
         row.update(status="ok", bytes_out=len(glb), vertices=len(rec.mesh.vertices), triangles=len(rec.mesh.faces),
                    queue_ms=_ms(queue_ms), preprocess_ms=_ms(tm["preprocess"]), inference_ms=_ms(tm["inference"]),
                    postprocess_ms=_ms(tm["postprocess"]), export_ms=_ms(export_ms), server_ms=_ms(server_ms),
-                   decode_steps=rec.info.get("decode_steps") or "")
+                   decode_steps=rec.info.get("decode_steps") or "", quality_ms=_ms(quality_ms), mesh_file=mesh_file)
+        if quality:
+            row.update(fscore=f"{quality['fscore@0.01']:.4f}", precision=f"{quality['precision']:.4f}",
+                       recall=f"{quality['recall']:.4f}", chamfer_l2=f"{quality['chamfer_l2']:.6f}")
         log.write(row)
         if verbose:
-            label = object_id or source
-            print(f"[edge] {request_id} {label}: {len(xyz)} points -> {len(rec.mesh.faces)} triangles "
+            name = object_id or source
+            accuracy = f", F-score {quality['fscore@0.01']:.2f}" if quality else ""
+            print(f"[edge] {request_id} {name}: {len(xyz)} points -> {len(rec.mesh.faces)} triangles "
                   f"({len(glb) / 1024:.1f} KB) | queue {queue_ms:.0f} ms, inference {tm['inference']:.0f} ms, "
-                  f"total {server_ms:.0f} ms", flush=True)
+                  f"total {server_ms:.0f} ms{accuracy}", flush=True)
         headers = {
             "X-Request-Id": request_id, "X-Backend": describe["backend"], "X-Model": describe["model"],
+            "X-Model-Label": label,
             "X-Points-In": str(len(xyz)), "X-Vertices": str(len(rec.mesh.vertices)),
             "X-Triangles": str(len(rec.mesh.faces)), "X-Queue-Ms": f"{queue_ms:.2f}",
             "X-Preprocess-Ms": f"{tm['preprocess']:.2f}", "X-Inference-Ms": f"{tm['inference']:.2f}",
@@ -153,6 +200,10 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
             headers["X-Decode-Steps"] = str(rec.info["decode_steps"])
         if rec.info.get("truncated"):
             headers["X-Truncated"] = "1"
+        if quality:
+            headers.update({"X-FScore": f"{quality['fscore@0.01']:.4f}", "X-Precision": f"{quality['precision']:.4f}",
+                            "X-Recall": f"{quality['recall']:.4f}", "X-Chamfer-L2": f"{quality['chamfer_l2']:.6f}",
+                            "X-Quality-Ms": f"{quality_ms:.2f}"})
         return Response(content=glb, media_type="model/gltf-binary", headers=headers)
 
     def load_stored_cloud(name: str, points: int):
@@ -177,9 +228,13 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
 
     @app.get("/health")
     async def health() -> dict:
-        return {"status": "ok", **describe, "requests_served": state["served"],
+        durations = state["durations"]
+        typical_s = statistics.median(durations) if durations else describe.get("simulated_inference_s", 0.0)
+        return {"status": "ok", **describe, "label": label, "requests_served": state["served"],
                 "uptime_s": round(time.time() - state["started"], 1),
-                "objects": sorted(objects) if objects is not None else "all"}
+                "objects": sorted(objects) if objects is not None else "all",
+                "typical_s": round(float(typical_s), 1), "budget_s": float(budget_s),
+                "accuracy_objects": sorted(references) if references else []}
 
     @app.post("/reconstruct", response_class=Response,
               responses={200: {"content": {"model/gltf-binary": {}}, "description": "the reconstructed mesh"}})
@@ -241,6 +296,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--log-csv", type=Path, default=DEFAULT_LOG, help="per-request CSV log")
     p.add_argument("--no-log", action="store_true", help="do not write the CSV log")
+    p.add_argument("--scene", default="demo_room",
+                   help="scene whose objects get an accuracy measure (data/scenes/<scene>/<id>_ref.npy)")
+    p.add_argument("--no-quality", action="store_true", help="do not measure the accuracy of the meshes")
+    p.add_argument("--save-meshes", type=Path, default=None, help="also write every mesh sent to this folder")
     p.add_argument("--objects", default=None,
                    help="comma-separated object ids to serve (e.g. box_01); the others are refused at once, so a "
                         "slow model does not block the client's queue with objects it cannot finish")
@@ -279,7 +338,17 @@ def main(argv=None) -> int:
     objects = {o.strip() for o in args.objects.split(",") if o.strip()} if args.objects else None
     if objects:
         print(f"[edge] serving only: {', '.join(sorted(objects))} (other objects are refused at once)", flush=True)
-    app = create_app(backend, log_csv=log_csv, objects=objects)
+    references = None
+    if not args.no_quality:
+        references = load_references(SCENES / args.scene) or None
+        if references:
+            print(f"[edge] accuracy measured for the objects of '{args.scene}': {', '.join(references)}", flush=True)
+        else:
+            print(f"[edge] no reference clouds in {SCENES / args.scene}: accuracy off "
+                  f"(build them with: python data/scenes/build_scene.py)", flush=True)
+    if args.save_meshes:
+        print(f"[edge] meshes saved in {args.save_meshes}", flush=True)
+    app = create_app(backend, log_csv=log_csv, objects=objects, references=references, save_meshes=args.save_meshes)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info", access_log=False)
     return 0
 

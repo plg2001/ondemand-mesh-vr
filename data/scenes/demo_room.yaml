@@ -18,9 +18,9 @@ reference_points: 20000
 seed: 0
 
 objects:
-  - id: box_01
-    shape: box
-    position: [0.0, 0.0, 2.6]
+  - id: box_01                 # the fastest to reconstruct (MeshAnything V2 on the GT 1030: ~70 s): in front, at
+    shape: box                 # table height (y = 0.8), so it is the closest to the centre of the view and asked first
+    position: [0.0, 0.8, 1.8]
     rotation_y_deg: 20
     size: 0.8
 
@@ -30,9 +30,9 @@ objects:
     rotation_y_deg: 200
     size: 0.5
 
-  - id: puppet_01
+  - id: puppet_01              # far back: on a slow edge it should not be the first one asked for
     shape: fastmesh_001
-    position: [1.0, 0.0, 2.0]
+    position: [1.6, 0.0, 4.6]
     rotation_y_deg: 180
     size: 0.7
 
@@ -47,8 +47,8 @@ objects:
     rotation_y_deg: 160
     size: 0.6
 
-  - id: wand_01
+  - id: wand_01                # off the box's line of sight, so it does not compete with it for the centre of view
     shape: mav2_wand
-    position: [0.0, 0.0, 4.2]
+    position: [-1.4, 0.0, 4.4]
     rotation_y_deg: 90
     size: 1.0

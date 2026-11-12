@@ -1,0 +1,2 @@
+timestamp,request_id,source,object_id,status,backend,model,points_in,bytes_in,bytes_out,vertices,triangles,queue_ms,preprocess_ms,inference_ms,postprocess_ms,export_ms,server_ms,decode_steps,detail,client,user_agent,quality_ms,fscore,precision,recall,chamfer_l2,mesh_file
+2026-11-12T11:40:22.731,9b7f2e2a,client,box_01,error 504,model,meshanything,2048,24576,,,,,,,,,122606.3,,time budget of 120.0 s exceeded (time budget exceeded after 1370 decoder calls),127.0.0.1,"UnityPlayer/6000.3.26f1 (UnityWebRequest/1.0, libcurl/8.20.0-DEV)",,,,,,

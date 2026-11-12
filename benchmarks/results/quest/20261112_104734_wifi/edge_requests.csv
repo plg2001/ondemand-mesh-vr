@@ -1,0 +1,2 @@
+timestamp,request_id,source,object_id,status,backend,model,points_in,bytes_in,bytes_out,vertices,triangles,queue_ms,preprocess_ms,inference_ms,postprocess_ms,export_ms,server_ms,decode_steps,detail,client,user_agent
+2026-11-12T10:48:07.114,1ecc096c,client,cat_01,error 504,model,meshanything,2048,24576,,,,,,,,,121672.5,,time budget of 120.0 s exceeded (time budget exceeded after 2123 decoder calls),192.168.1.28,"UnityPlayer/6000.3.26f1 (UnityWebRequest/1.0, libcurl/8.20.0-DEV)"

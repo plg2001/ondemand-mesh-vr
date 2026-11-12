@@ -57,27 +57,36 @@ public class EdgeClient
     {
         public bool Ok;
         public bool ConnectionFailed;  // the server could not be reached at all (off, wrong address, firewall)
+        public long StatusCode;        // HTTP status of the answer (0 = no answer)
         public string Error = "";
         public byte[] Glb;
         public int BytesUp;
         public double RoundTripMs;
         public double ServerMs = double.NaN, QueueMs = double.NaN, InferenceMs = double.NaN;
-        public string Backend = "", Model = "";
+        public string Backend = "", Model = "", ModelLabel = "";
+
+        // accuracy of the mesh against the original one, measured by the server (NaN: object without a reference)
+        public double FScore = double.NaN, Precision = double.NaN, Recall = double.NaN, ChamferL2 = double.NaN;
+        public double QualityMs = double.NaN;  // time of that evaluation, included in ServerMs
 
         /// <summary>Transfer + HTTP overhead + waiting for Unity's main thread.</summary>
         public double NetworkMs => RoundTripMs - ServerMs;
     }
 
+    /// <summary>The answer of GET /health (filled by JsonUtility): which model, and inputs for a time estimate.</summary>
     [Serializable]
-    class HealthInfo  // filled by JsonUtility
+    public class Health
     {
         public string status = "";
         public string backend = "";
         public string model = "";
+        public string label = "";  // model name to show, e.g. "MeshAnything V2" or "convex-hull"
+        public float typical_s;    // median server time of the last meshes (mock: its delay); 0 = no idea yet
+        public float budget_s;     // the server gives up on a mesh after this many seconds; 0 = never
     }
 
-    /// <summary>GET /health with a short timeout. Returns (reachable, "backend/model" or the error).</summary>
-    public async Task<(bool ok, string info)> HealthAsync(int timeoutSeconds = 3)
+    /// <summary>GET /health with a short timeout. Returns (reachable, "backend/model" or the error, the answer).</summary>
+    public async Task<(bool ok, string info, Health health)> HealthAsync(int timeoutSeconds = 3)
     {
         using var request = UnityWebRequest.Get($"{BaseUrl}/health");
         request.timeout = timeoutSeconds;
@@ -89,18 +98,18 @@ public class EdgeClient
         }
         catch (InvalidOperationException e)
         {
-            return (false, e.Message);
+            return (false, e.Message, null);
         }
         if (request.result != UnityWebRequest.Result.Success)
-            return (false, request.error);
+            return (false, request.error, null);
         try
         {
-            var h = JsonUtility.FromJson<HealthInfo>(request.downloadHandler.text);
-            return (true, $"{h.backend}/{h.model}");
+            var h = JsonUtility.FromJson<Health>(request.downloadHandler.text);
+            return (true, $"{h.backend}/{h.model}", h);
         }
         catch (ArgumentException)
         {
-            return (true, "unknown backend");
+            return (true, "unknown backend", null);
         }
     }
 
@@ -114,13 +123,6 @@ public class EdgeClient
             downloadHandler = new DownloadHandlerBuffer()
         };
         return SendAsync(request, xyzFloat32.Length);
-    }
-
-    /// <summary>GET /shapes/{name}/mesh: the cloud is stored on the edge, the headset only names it.</summary>
-    public Task<Response> StoredShapeMeshAsync(string shape, int points)
-    {
-        var url = $"{BaseUrl}/shapes/{UnityWebRequest.EscapeURL(shape)}/mesh?points={points}";
-        return SendAsync(UnityWebRequest.Get(url), 0);
     }
 
     async Task<Response> SendAsync(UnityWebRequest request, int bytesUp)
@@ -145,10 +147,13 @@ public class EdgeClient
             }
             timer.Stop();
             r.RoundTripMs = timer.Elapsed.TotalMilliseconds;
+            r.StatusCode = request.responseCode;
 
             if (request.result != UnityWebRequest.Result.Success)
             {
-                r.Error = $"{request.error} {request.downloadHandler?.text}";
+                var detail = ErrorDetail(request.downloadHandler?.text);
+                r.Error = detail.Length > 0 ? $"HTTP {request.responseCode}: {detail}"
+                                            : $"{request.error} {request.downloadHandler?.text}";
                 if (request.result == UnityWebRequest.Result.ConnectionError)
                 {
                     r.ConnectionFailed = true;
@@ -166,8 +171,35 @@ public class EdgeClient
             r.InferenceMs = Number(headers, "X-Inference-Ms");
             r.Backend = headers.TryGetValue("X-Backend", out var b) ? b : "";
             r.Model = headers.TryGetValue("X-Model", out var m) ? m : "";
+            r.ModelLabel = headers.TryGetValue("X-Model-Label", out var l) ? l : r.Model;
+            r.FScore = Number(headers, "X-FScore");
+            r.Precision = Number(headers, "X-Precision");
+            r.Recall = Number(headers, "X-Recall");
+            r.ChamferL2 = Number(headers, "X-Chamfer-L2");
+            r.QualityMs = Number(headers, "X-Quality-Ms");
             r.Ok = true;
             return r;
+        }
+    }
+
+    [Serializable]
+    class ErrorBody  // the server's errors are JSON {"detail": "..."} (FastAPI)
+    {
+        public string detail = "";
+    }
+
+    /// <summary>The "detail" of a JSON error answer, "" if the body is something else.</summary>
+    static string ErrorDetail(string body)
+    {
+        if (string.IsNullOrEmpty(body) || !body.TrimStart().StartsWith("{"))
+            return "";
+        try
+        {
+            return JsonUtility.FromJson<ErrorBody>(body)?.detail ?? "";
+        }
+        catch (ArgumentException)
+        {
+            return "";
         }
     }
 

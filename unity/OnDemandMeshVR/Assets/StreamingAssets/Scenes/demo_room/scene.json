@@ -13,8 +13,8 @@
       "bytes_xyz_f32": 24576,
       "position": [
         0.0,
-        0.24,
-        2.6
+        1.04,
+        1.8
       ],
       "rotation": [
         0.0,
@@ -86,9 +86,9 @@
       "point_count": 2048,
       "bytes_xyz_f32": 24576,
       "position": [
-        1.0,
+        1.6,
         0.323826,
-        2.0
+        4.6
       ],
       "rotation": [
         0.0,
@@ -197,9 +197,9 @@
       "point_count": 2048,
       "bytes_xyz_f32": 24576,
       "position": [
-        0.0,
+        -1.4,
         0.5,
-        4.2
+        4.4
       ],
       "rotation": [
         0.0,

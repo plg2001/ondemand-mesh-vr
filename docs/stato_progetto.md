@@ -163,6 +163,38 @@ Sessione `benchmarks/results/quest/20261111_160430_wifi/` con
   Per la tesi vale il tempo dalla richiesta alla mesh (`total_ms` in `edge_timings.csv`); l'app va corretta alla
   prossima build (sezione 6, punto 2).
 
+### 4.5 App corretta sul visore (12 novembre, Wi-Fi)
+
+Nuova build con le correzioni della sezione 6, punto 2. Due sessioni:
+
+- **Mock** (`20261112_104605_wifi`, 6 oggetti): tutto funziona come prima (6 mesh, cache 15 ms, rete mediana 42 ms).
+  **La prima mesh ora si carica in 28 ms**, come le altre (prima 52-60 ms): la preparazione all'avvio
+  (`WarmUpMesh`) toglie il costo del primo caricamento di glTFast. **Il calo di fps dopo la prima mesh invece resta**
+  (mediana 62, minimo 51 nei 2 s dopo): non dipende da glTFast. Ipotesi da verificare: il passaggio delle ombre
+  (la mesh minuscola della preparazione forse non viene disegnata nella mappa delle ombre) o lo spegnimento dei punti.
+- **MeshAnything V2 senza `--objects`, limite 120 s** (`20261112_104734_wifi`, interrotta: la finestra è stata chiusa
+  senza Invio, quindi mancano i CSV dell'app e il riassunto; restano il log del server e gli fps). Il primo oggetto
+  chiesto è stato il gatto: il server ha rinunciato dopo 121,7 s (504) e l'app, dal suo log, lo ha segnato
+  `TooSlow, not retried` ed è **passata all'oggetto successivo** invece di richiederlo all'infinito. È la correzione
+  della coda verificata sul visore. Non verificati: l'ordine "centro della vista" misurato oggetto per oggetto e
+  l'attesa che non riparte durante una richiesta lunga (serve una mesh che arrivi mentre si guarda altrove).
+- Tenere il visore a lungo dà nausea: le prove vanno tenute brevi (al massimo 1-2 minuti), con il mock o con
+  `--objects` sulla scatola.
+- **Timer, etichette e accuratezza** (`20261112_113450_wifi`, MeshAnything V2, `--time-budget-s 120 --objects
+  box_01`, scena spostata): la scatola è arrivata **66,1 s** dopo la richiesta (server 66,0 s, rete 147 ms,
+  caricamento 28 ms), F-score **0,70** (precisione 0,60, richiamo 0,85, Chamfer-L2 0,00101: la stessa mesh e la stessa
+  accuratezza del giorno prima, la generazione è deterministica); il calcolo dell'accuratezza ha preso 91 ms. Il tempo
+  "dall'ingresso in vista alla mesh" ora vale 66,1 s, uguale alla richiesta (prima 34 s per la stessa attesa). Gli altri
+  oggetti, rifiutati da `--objects`, sono stati segnati `Refused, not retried` in pochi millisecondi senza ritardare la
+  scatola; la mesh è poi ricomparsa dalla cache in 15 ms. Preparazione all'avvio: 76 ms. Il calo di fps dopo la prima
+  mesh resta (minimo 37, mediana 54 nei 2 s dopo): ancora da capire (ombre? creazione dell'etichetta?).
+- **Scena spostata (12 novembre)**, perché con il nuovo ordine conta l'angolo dallo sguardo e non la distanza:
+  la scatola, la più veloce da ricostruire, ora è davanti a 1,8 m e all'altezza di un tavolo (0,8 m); il pupazzo è
+  in fondo (4,9 m invece di 2,2); la bacchetta è spostata di lato, prima era dietro la scatola sulla stessa linea.
+  Dall'altezza degli occhi la scatola è ora il primo oggetto richiesto, sia guardando dritto sia verso il basso (a
+  3-17° dal centro della vista; prima veniva sempre la bacchetta, a 5-15°). Le sessioni fino all'11 novembre usano
+  la disposizione precedente: i tempi dall'ingresso in vista alla mesh non sono confrontabili oggetto per oggetto.
+
 ## 5. Cosa NON è stato verificato
 
 - Il **modello vero con il visore**: provato una volta, solo MeshAnything V2 e solo sulla scatola (sezione 4.4); gli
@@ -179,17 +211,30 @@ Sessione `benchmarks/results/quest/20261111_160430_wifi/` con
 
 1. Cavo contro Wi-Fi: primo confronto fatto (sezione 4.2). Per numeri da tesi ripetere 3 sessioni per collegamento
    (`session_usb.bat` / `session_wifi.bat`), annotando distanza dal router e altri dispositivi.
-   Opzionale, alla prossima build: precaricare glTFast all'avvio con una mesh minuscola per togliere il calo di fps
-   alla prima mesh, e aggiungere ai CSV dell'app il collegamento e gli fps.
-2. Ridurre la coda (serve una build): priorità all'oggetto al centro della vista; **non riprovare a ripetizione gli
-   oggetti che hanno superato il limite di tempo** (oggi ogni 10 s, e se sono più vicini bloccano gli altri per sempre,
-   sezione 4.3); **non far ripartire l'attesa misurata** (`visible_to_mesh_ms`) mentre la richiesta dell'oggetto è
-   in corso (sezione 4.4); opzionale un backend "replay" che restituisce mesh già generate con ritardi realistici,
-   per le dimostrazioni.
+2. **Correzioni dell'app: fatte e provate in parte sul visore (sezione 4.5).** Resta il calo di fps alla prima
+   mesh, che la preparazione all'avvio non toglie. Coda: prima l'oggetto
+   più vicino al centro della vista (*Queue Order*, `Nearest` per il comportamento di prima); gli oggetti che il
+   server abbandona per il limite di tempo (504) o rifiuta (4xx) non vengono più richiesti, gli errori passeggeri
+   con una pausa che raddoppia (sezione 4.3). L'attesa misurata non riparte mentre la richiesta è in corso (sezione
+   4.4). All'avvio una mesh minuscola invisibile prepara glTFast (`WarmUpMesh.cs`): il primo caricamento
+   ora costa 28 ms come gli altri, ma il calo di fps resta e ha un'altra causa. Tolto il vecchio test di un solo
+   oggetto (`MeshLoader`, `EdgeMeshClient.cs` e i suoi file in `StreamingAssets`). Opzionale: un backend
+   "replay" che restituisce mesh già generate con ritardi realistici, per le dimostrazioni.
 3. Modello vero con il visore: fatto per la scatola con MeshAnything V2 (sezione 4.4, comando nel README). Restano
    gli altri modelli, la mesh completa di TreeMeshGPT e soprattutto il PC del laboratorio, per i numeri sulla GPU
    potente con tutti gli oggetti.
-4. Misurare memoria e qualità con le mesh dei modelli, variando il numero di punti.
+4. Accuratezza e memoria con le mesh dei modelli, variando il numero di punti. **Da novembre il server misura da solo
+   l'accuratezza** di ogni mesh rispetto all'originale (F-score, precisione, richiamo, Chamfer: README, sezione 8) e
+   salva le mesh nella cartella della sessione; `summary.md` le riporta in una tabella. Nel visore: riga con il tempo
+   trascorso e la stima di quanto manca sul pannello, etichetta con l'accuratezza sopra ogni oggetto (da provare
+   con la prossima build). Riferimento minimo (sessione mock `20261112_113036_wifi`), F-score / Chamfer-L2 dell'involucro convesso: sfera
+   1,00 / 0,00003, scatola 0,98 / 0,00005 (forme convesse: l'involucro è già la risposta giusta), coniglio 0,39 /
+   0,0034, bacchetta 0,31 / 0,0023, pupazzo 0,26 / 0,0041, gatto 0,16 / 0,0072. Per confronto, forme volutamente
+   sbagliate sul coniglio: triangoli a caso nel suo riquadro 0,15 / 0,0057, ellissoide 0,11 / 0,0121, scatola 0,06 /
+   0,0268; una ricostruzione buona (FastMesh sul pupazzo, Fase 1) 0,47 / 0,00041. Il Chamfer da solo inganna (i
+   triangoli a caso sono vicini all'involucro): vanno riportati tutti e due. Il calcolo costa 50-350 ms per mesh.
+   Nel simulatore, con l'editor in Play sulla stessa GT 1030, la scatola non finisce in 120 s (504,
+   `20261112_113836_wifi`) contro i 66 s col visore: l'Edge deve avere la GPU tutta per sé.
 5. Confronto **Edge contro inferenza sul Quest** (proposta dello studente, ancora senza risposta della relatrice):
    nel progetto c'è già il pacchetto Unity Inference Engine (`com.unity.ai.inference`).
 6. Robustezza: nuvole con rumore e buchi, scena reale.

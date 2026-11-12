@@ -207,7 +207,7 @@ Il visore (il Quest 2, oppure Unity sul PC con l'XR Device Simulator) manda una 
 risponde con la mesh ricostruita in formato `.glb`; Unity la carica a runtime.
 
 ```
-Unity (EdgeMeshClient)  ── punti float32, ~24 KB ──►  server Edge (python -m edge.server)
+Unity (SceneObject)     ── punti float32, ~24 KB ──►  server Edge (python -m edge.server)
                                                        modello: mock (inviluppo convesso) o rete vera
 Unity (RuntimeMeshLoader) ◄──── mesh .glb ───────────  + header con i tempi di ogni fase
 ```
@@ -223,6 +223,8 @@ python -m edge.server --mock-delay-s 3                      # mock con 3 s di in
 python -m edge.server --backend model --model meshanything  # modello vero (pesi in checkpoints/)
 python -m edge.server --backend model --model fastmesh --time-budget-s 300   # risposta 504 dopo 5 minuti
 python -m edge.server --backend model --model meshanything --objects box_01  # serve solo questi oggetti, gli altri 409
+python -m edge.server --save-meshes out/meshes              # salva anche ogni mesh inviata (.glb)
+python -m edge.server --no-quality                          # niente misura dell'accuratezza (latenza pura)
 ```
 
 - Documentazione interattiva delle API, con la possibilità di provarle dal browser: http://127.0.0.1:8000/docs
@@ -248,20 +250,22 @@ Header della risposta, in millisecondi: `X-Queue-Ms`, `X-Preprocess-Ms`, `X-Infe
 cavo, l'indirizzo del visore via Wi-Fi). Un log con le colonne di una versione precedente viene rinominato
 (`edge_requests_old_<data>.csv`) invece di essere mescolato alle righe nuove.
 
-**Client Unity, test di un solo oggetto** (`unity/OnDemandMeshVR/Assets/Scripts/`). È il primo client, superato dalla
-scena con più oggetti descritta sotto: nella scena l'oggetto `MeshLoader` che lo contiene è **disattivato**.
+**Accuratezza.** Se l'oggetto è uno della scena (`--scene`, default `demo_room`) il server confronta la mesh con
+quella originale, cioè con la nuvola densa che `build_scene.py` ne ha campionato (`data/scenes/<scena>/<id>_ref.npy`,
+stesso sistema di riferimento dei punti e della mesh): F-score all'1% della diagonale, precisione (la mesh non
+inventa parti), richiamo (non ne dimentica), Chamfer-L2. Vanno negli header `X-FScore`, `X-Precision`, `X-Recall`,
+`X-Chamfer-L2` e nel log; `X-Quality-Ms` è il tempo del calcolo (50-350 ms, cresce con i triangoli), **compreso** in `X-Server-Ms`: va tolto per
+la latenza della sola ricostruzione. Le nuvole di riferimento non sono versionate: su un altro PC (laboratorio) vanno
+generate con `python data/scenes/build_scene.py`, altrimenti il server lo dice e salta la misura. Con il mock
+l'involucro convesso fa da riferimento minimo: F-score 1,00 sulla sfera e 0,98 sulla scatola (convesse), 0,39 sul
+coniglio, 0,31 sulla bacchetta, 0,26 sul pupazzo, 0,16 sul gatto. `/health` dà anche `typical_s` (mediana del tempo del server sulle ultime mesh; col mock il suo ritardo) e
+`budget_s` (limite di tempo, 0 = nessuno), che l'app usa per stimare quanto manca.
 
-1. Avvia il server (doppio clic su `start_edge_server.bat`).
-2. Sull'oggetto `MeshLoader` della scena aggiungi il componente **Edge Mesh Client** (`EdgeMeshClient.cs`): usa il
-   `RuntimeMeshLoader` dello stesso oggetto e ne disattiva il caricamento da file.
-3. Premi Play: la nuvola indicata in *Point Cloud File* (in `Assets/StreamingAssets/PointClouds/`) viene inviata al
-   server e la mesh ricevuta compare nella scena. Per ripetere la richiesta durante il Play: menu ⋮ del componente →
-   *Request mesh from edge*.
-4. Con *Source* = `UseCloudStoredOnEdge` il client non invia punti: chiede la nuvola per nome al server.
-
-La Console di Unity riporta, per ogni richiesta, i KB inviati e ricevuti, il round trip diviso in tempo del server e
-tempo di rete, e il tempo di caricamento del `.glb`. Le stesse misure vanno in `edge_timings.csv`, in
-`Application.persistentDataPath` (il percorso viene stampato nella Console alla prima richiesta).
+**Client Unity** (`unity/OnDemandMeshVR/Assets/Scripts/`): la scena con più oggetti descritta qui sotto. Per ogni mesh
+ricevuta la Console di Unity riporta i KB inviati e ricevuti, il round trip diviso in tempo del server e tempo di rete,
+e il tempo di caricamento del `.glb`; le stesse misure vanno in `edge_timings.csv`, in `Application.persistentDataPath`
+(il percorso viene stampato nella Console alla prima richiesta). Gli endpoint `/shapes/...` (nuvole salvate sull'Edge)
+non sono usati dall'app: restano per l'esperimento facoltativo "i punti stanno sull'Edge".
 
 **Scena con più oggetti** (`data/scenes/`). Una scena nasce come mesh disposte in una stanza: un file YAML elenca
 forma, posizione, rotazione e dimensione di ogni oggetto ([`data/scenes/demo_room.yaml`](data/scenes/demo_room.yaml):
@@ -286,20 +290,31 @@ In Unity: crea un GameObject vuoto in posizione `(0, 0, 0)`, aggiungi il compone
 (`PointCloudScene.cs`) e assegna `MeshGrey` a *Mesh Material*. Al Play crea un oggetto per ogni elemento della scena e
 ne disegna la nuvola come **punti** (segnaposto): piccoli quadratini rivolti verso la camera, colore e diametro in
 *Point Color* e *Point Size*. Con *Gizmos* attivo, il riquadro di ogni oggetto ne mostra lo stato: grigio = punti fuori
-vista, azzurro = in vista e in attesa, giallo = richiesta in corso, verde = mesh mostrata, rosso = errore.
+vista, azzurro = in vista e in attesa, giallo = richiesta in corso, verde = mesh mostrata, rosso = errore (verrà
+richiesto di nuovo), magenta = errore, non più richiesto.
 
 *Mode* sceglie il comportamento:
 
 | Mode | Cosa fa |
 |---|---|
-| `OnDemand` (default) | ogni *Check Interval Seconds* (0,1 s) controlla quali oggetti sono nel campo visivo della camera; chiede all'Edge solo quelli senza mesh, uno alla volta, dal più vicino, e sostituisce i punti con la mesh. Una mesh che resta fuori vista per *Release After Seconds* (3 s) viene eliminata e l'oggetto torna ai punti. Con *Cache Meshes* il `.glb` ricevuto resta in memoria: quando l'oggetto rientra in vista ricompare subito, senza nuova richiesta e senza attendere quelle in corso verso l'Edge. L'attesa misurata parte da quando l'oggetto entra in vista senza mesh e non si azzera se esce e rientra per poco |
+| `OnDemand` (default) | ogni *Check Interval Seconds* (0,1 s) controlla quali oggetti sono nel campo visivo della camera; chiede all'Edge solo quelli senza mesh, uno alla volta, **prima quello più vicino al centro della vista** (*Queue Order* = `CenterOfView`; con `Nearest` prima il più vicino), e sostituisce i punti con la mesh. Un oggetto fallito viene richiesto di nuovo solo se può servire: server irraggiungibile (quando torna) o errore passeggero (pausa che raddoppia a ogni errore, al massimo 5 minuti). Quelli che il server ha abbandonato per il limite di tempo (504) o rifiutato (4xx, per esempio `--objects`) restano punti. Una mesh che resta fuori vista per *Release After Seconds* (3 s) viene eliminata e l'oggetto torna ai punti. Con *Cache Meshes* il `.glb` ricevuto resta in memoria: quando l'oggetto rientra in vista ricompare subito, senza nuova richiesta e senza attendere quelle in corso verso l'Edge. L'attesa misurata parte da quando l'oggetto entra in vista senza mesh e non si azzera se esce e rientra per poco, né finché la sua richiesta è in corso |
 | `ReconstructAllOnStart` | chiede tutti gli oggetti all'avvio, dal più vicino, senza guardare il campo visivo |
 | `Manual` | niente di automatico: si usa il menu del componente |
 
 Altri parametri: *View Margin* (allarga il controllo del campo visivo, così la richiesta parte un po' prima),
-*Max Distance* (oltre questa distanza gli oggetti restano punti), *Retry After Seconds* (dopo un errore).
-Dal menu ⋮ del componente: *Reconstruct all objects*, *Remove all meshes*, *Print memory report* (oggetti in vista,
-mesh mostrate e loro triangoli, memoria dei punti e della cache).
+*Max Distance* (oltre questa distanza gli oggetti restano punti), *Retry After Seconds* (prima pausa dopo un errore
+passeggero), *Warm Up Mesh Loading* (all'avvio carica e disegna una volta, invisibile, una mesh minuscola fatta
+dall'esportatore del server, `WarmUpMesh.cs`: così la prima mesh vera non paga l'avvio di glTFast e la preparazione
+dello shader). Dal menu ⋮ del componente: *Reconstruct all objects*, *Remove all meshes*, *Retry failed objects*,
+*Print memory report* (oggetti in vista, mesh mostrate e loro triangoli, memoria dei punti e della cache).
+
+Nel visore il **pannello di stato** ha una riga per la richiesta in corso: oggetto, modello, secondi trascorsi e una
+stima di quanto manca, per esempio `Reconstructing box_01 (MeshAnything V2): 23 s, about 43 s left (last time 66 s),
+gives up at 120 s`. La stima è il tempo che lo stesso oggetto ha richiesto l'ultima volta con lo stesso modello
+(ricordato dall'app tra un avvio e l'altro); se non è mai stato chiesto, il tempo tipico del server. Sopra ogni oggetto
+con la mesh compare un'**etichetta** (*Show Object Labels*, `ObjectLabel.cs`) con modello, triangoli, tempo e
+accuratezza misurata dal server (F-score, Chamfer, precisione, richiamo); è sempre rivolta verso chi guarda e ha la
+stessa grandezza apparente da vicino e da lontano.
 
 Ogni volta che una mesh compare, la Console stampa **quanto è passato da quando l'oggetto è entrato in vista**
 (la latenza percepita), quanta parte di quel tempo l'oggetto ha atteso il proprio turno e se la mesh arriva dall'Edge o
@@ -333,11 +348,11 @@ Il riassunto si può rigenerare, anche per le cartelle vecchie, con
 
 Note pratiche per le sessioni:
 - il cavo resta collegato anche nella sessione Wi-Fi: porta solo il registro degli fps, le richieste passano dal Wi-Fi;
-- premere **Invio** nella finestra **prima** di togliere il visore (in standby non ci sono fps) e non chiuderla con la
-  X (i risultati si salvano dopo Invio);
+- per finire, **sempre Invio** nella finestra, mai la X: i risultati si salvano solo dopo Invio. Va bene anche
+  togliere prima il visore: si perdono solo gli fps degli ultimi secondi (in standby non si disegna nulla);
 - per un modello vero: `tools\quest\session_wifi.bat --server-args "--backend model --model meshanything --time-budget-s 300 --objects box_01"`.
   Sulla GT 1030 MeshAnything V2 ricostruisce la scatola in circa 70 s e non finisce le altre forme in 5 minuti;
-  `--objects` rifiuta subito gli altri oggetti, che altrimenti, essendo più vicini, bloccherebbero la coda;
+  `--objects` rifiuta subito gli altri oggetti, invece di spendere 5 minuti per ognuno prima di arrendersi;
 - Wi-Fi: la prima volta Windows Defender chiede l'accesso, va consentito sulle **reti private**, e la rete del PC deve
   essere *privata* (*Impostazioni → Rete e Internet → Wi-Fi*); prova da telefono: `http://<ip del PC>:8000/health`;
 - l'orologio del PC può essere sbagliato di qualche secondo: la sessione misura la differenza col visore e il

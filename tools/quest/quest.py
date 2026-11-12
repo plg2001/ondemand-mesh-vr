@@ -454,7 +454,8 @@ def cmd_session(adb: Adb, args) -> int:
         print("An edge server is already running: keeping it; its rows of this session are copied at the end.")
     else:
         cmd = [sys.executable, "-m", "edge.server", "--host", host, "--port", str(args.port),
-               "--log-csv", str(server_log), *shlex.split(args.server_args)]
+               "--log-csv", str(server_log), "--save-meshes", str(dest / "meshes"),
+               *shlex.split(args.server_args)]
         print("Starting the edge server: " + " ".join(cmd[2:]))
         server_proc = subprocess.Popen(cmd, cwd=ROOT)
         if not wait_for_server(local, 120 if "model" in args.server_args else 30):
