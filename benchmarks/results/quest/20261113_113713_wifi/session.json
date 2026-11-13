@@ -1,0 +1,16 @@
+{
+  "link": "wifi",
+  "server_url": "http://192.168.1.32:8000",
+  "package": "com.DefaultCompany.VRTemplate",
+  "headset": "Quest 2",
+  "started_pc": 1794566239.2389898,
+  "ended_pc": 1794566263.8985102,
+  "clock_offset_s": {
+    "start": 1.962,
+    "end": 1.961
+  },
+  "headset_utc_offset_s": 3600,
+  "server_args": "--backend classical --method alpha",
+  "app_restarted": true,
+  "fps_rows": 26
+}

@@ -6,6 +6,8 @@ A backend turns a sparse point cloud into a triangle mesh expressed in the *same
   used to develop and test the headset <-> edge protocol on a weak PC.
 * ``ModelBackend`` one of the three generative models through ``models/mesh_wrappers``. The network is
   loaded once at start-up and kept in memory; each request only pays preprocessing + generation.
+* ``ClassicalBackend`` a classical surface reconstruction (``mesh_wrappers.classical``: convex hull, alpha shape,
+  Ball Pivoting, Poisson), milliseconds on the CPU, no weights: the baseline the generative models must beat.
 
 Torch and the upstream code are imported lazily, so the mock backend starts in about a second.
 """
@@ -110,6 +112,51 @@ class MockBackend:
 
 
 # ----------------------------------------------------------------------------- real models
+class ClassicalBackend:
+    """Classical surface reconstruction of the points (mesh_wrappers.classical). The headset sends points only, so the
+    normals that Ball Pivoting and Poisson need are estimated here, as for the generative models (preprocess)."""
+
+    def __init__(self, method: str = "ball_pivoting", target_faces: Optional[int] = None):
+        from mesh_wrappers import classical
+
+        if method not in classical.METHODS:
+            raise RuntimeError(f"unknown method {method!r}; choose one of {', '.join(classical.METHODS)}")
+        self.method, self.target_faces = method, target_faces or None
+        self.label = classical.LABELS[method]
+        # One small reconstruction now, so that loading Open3D (~2 s) is not paid by the first request. A bumpy ball,
+        # not an exact sphere: points all on one sphere are a degenerate case for the alpha shape (no triangles). It
+        # is only a warm-up, so whatever happens the server starts.
+        rng = np.random.default_rng(0)
+        ball = rng.normal(size=(512, 3))
+        ball *= ((1.0 + 0.05 * rng.standard_normal(len(ball))) / np.linalg.norm(ball, axis=1))[:, None]
+        try:
+            self.reconstruct(ball.astype(np.float32))
+        except (ReconstructionError, ValueError, IndexError, RuntimeError):
+            pass
+
+    def describe(self) -> dict:
+        return {"backend": "classical", "model": self.method, "model_display": f"{self.label} (classical)",
+                "target_faces": self.target_faces or 0}
+
+    def reconstruct(self, xyz: np.ndarray, normals: Optional[np.ndarray] = None, seed: int = 0) -> Reconstruction:
+        from mesh_wrappers import classical
+
+        t0 = time.perf_counter()
+        normals_source = "unused"
+        if self.method in classical.NEEDS_NORMALS:
+            if normals is None:
+                normals, normals_source = estimate_normals(xyz), "estimated-open3d"
+            else:
+                normals, normals_source = unit(normals), "client"
+        t1 = time.perf_counter()
+        result = classical.reconstruct(xyz, normals, self.method, self.target_faces)
+        if len(result.mesh.faces) == 0:
+            raise ReconstructionError(f"{self.label} produced no triangles from these {len(xyz)} points", 422)
+        return Reconstruction(result.mesh, {"preprocess": (t1 - t0) * 1e3, "inference": result.seconds * 1e3,
+                                            "postprocess": 0.0},
+                              {"method": self.method, "normals_source": normals_source, **result.params})
+
+
 class ModelBackend:
     """MeshAnything V2 / FastMesh / TreeMeshGPT, loaded once and reused for every request."""
 

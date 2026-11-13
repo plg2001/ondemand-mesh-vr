@@ -225,6 +225,18 @@ vere e stimate. Circa un'ora sulla GPU:
 .venv/bin/python -m benchmarks.run_benchmarks --modes real --device cuda --points 2048 --quality --time-budget-s 300 --repeats 3 --warmup 1 --shapes box bunny fastmesh_001 sphere tmg_cat mav2_wand --normals file estimate
 ```
 
+**Metodi classici** (`models/mesh_wrappers/classical.py`, Open3D, CPU): involucro convesso, alpha shape, Ball
+Pivoting, Poisson, sugli stessi ingressi, riferimento e misura dei generativi, per rispondere a "serve davvero un
+modello generativo?". Normali vere e stimate, piena risoluzione e ridotta a 1000 triangoli, e nella stessa tabella le
+mesh complete dei generativi già misurate (risultati e commento: `docs/stato_progetto.md`, sezione 4.6). Un paio di
+minuti su questo PC:
+
+```powershell
+python -m benchmarks.classical_baselines                          # sei forme della scena, 2048 punti
+python -m benchmarks.classical_baselines --shapes bunny --points 500 2048 --target-faces 500 1000
+python -m edge.server --backend classical --method ball_pivoting  # gli stessi metodi dal server, anche per il visore
+```
+
 ## 6. Test
 
 ```powershell

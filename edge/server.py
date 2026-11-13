@@ -4,6 +4,7 @@ Run from the repository root:
     python -m edge.server                                      # mock backend (convex hull): no weights, no GPU
     python -m edge.server --mock-delay-s 3                     # mock + 3 s of simulated inference per request
     python -m edge.server --backend model --model meshanything # real model (weights in checkpoints/)
+    python -m edge.server --backend classical --method ball_pivoting   # classical reconstruction, milliseconds
     python -m edge.server --host 0.0.0.0                       # reachable from other devices on the LAN (Quest)
     python -m edge.server --save-meshes out/meshes             # also keep every mesh sent, as .glb
 
@@ -59,7 +60,7 @@ from fastapi.responses import PlainTextResponse, Response
 import numpy as np
 
 from edge import ROOT  # also puts models/ on sys.path for the mesh_wrappers imports below
-from edge.reconstruction import (MockBackend, ModelBackend, Reconstruction, ReconstructionError, decode_points,
+from edge.reconstruction import (ClassicalBackend, MockBackend, ModelBackend, Reconstruction, ReconstructionError, decode_points,
                                  encode_points, export_glb)
 from mesh_wrappers.mesh_io import quality_metrics
 from mesh_wrappers.pointcloud import load_pointcloud
@@ -309,8 +310,12 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
 # ============================================================================ CLI
 def parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--backend", choices=("mock", "model"), default="mock",
-                   help="mock = convex hull (no weights); model = MeshAnything V2 / FastMesh / TreeMeshGPT")
+    p.add_argument("--backend", choices=("mock", "model", "classical"), default="mock",
+                   help="mock = convex hull (no weights); model = MeshAnything V2 / FastMesh / TreeMeshGPT; "
+                        "classical = hull / alpha shape / Ball Pivoting / Poisson (--method)")
+    p.add_argument("--method", default="ball_pivoting", help="classical: hull | alpha | ball_pivoting | poisson")
+    p.add_argument("--target-faces", type=int, default=None,
+                   help="classical: decimate every mesh to this many triangles (e.g. 1000)")
     p.add_argument("--model", default="meshanything", help="meshanything | fastmesh | treemeshgpt")
     p.add_argument("--variant", default=None, help="FastMesh: V1K | V4K; TreeMeshGPT: 7bit | 9bit")
     p.add_argument("--device", default="auto", help="auto | cpu | cuda")
@@ -342,6 +347,12 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     if args.backend == "mock":
         backend = MockBackend(args.mock_delay_s)
+    elif args.backend == "classical":
+        try:
+            backend = ClassicalBackend(args.method, args.target_faces)
+        except RuntimeError as e:
+            print(f"[edge] cannot start: {e}", file=sys.stderr)
+            return 1
     else:
         print(f"[edge] loading {args.model} on {args.device} (this takes a while)...", flush=True)
         try:
