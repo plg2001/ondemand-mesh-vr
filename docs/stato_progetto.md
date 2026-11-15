@@ -411,9 +411,11 @@ python -m pytest -q tests                      # 82 test, senza pesi né GPU
 setup_pc.bat                                   # prepara o controlla il PC (Linux/macOS: ./setup_pc.sh)
 python tools\setup_pc.py --export-checkpoints E:\checkpoints   # pesi su disco esterno per un altro PC
 tools\edge\start_edge_server.bat              # server mock per le prove nell'editor
+tools\edge\start_model_server.bat             # server con un modello generativo, solo per questo PC (chiede quale)
 tools\quest\check_headset.bat                  # il Quest è collegato e autorizzato?
 tools\quest\server_usb.bat                     # server + collegamento via cavo (prima prova)
 tools\quest\server_wifi.bat                    # server raggiungibile dal Wi-Fi
+tools\quest\server_wifi_model.bat              # come sopra, con un modello generativo (chiede modello e oggetto)
 tools\quest\install_app.bat                    # installa Builds\OnDemandMeshVR.apk
 tools\quest\pull_results.bat                   # copia i CSV dei tempi dal visore
 tools\quest\session_usb.bat                    # sessione di misura via cavo (anche session_wifi.bat)

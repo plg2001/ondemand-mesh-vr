@@ -283,7 +283,13 @@ Unity (RuntimeMeshLoader) ◄──── mesh .glb ─────────�
 **Server**: il modo più semplice è il doppio clic su **`tools\edge\start_edge_server.bat`** (Linux/macOS: `tools/edge/start_edge_server.sh`).
 Avvia il backend mock con 2 s di inferenza simulata per oggetto; se un server è già acceso sulla porta 8000 non ne
 apre un secondo. Si ferma con `Ctrl+C` o chiudendo la finestra. Le opzioni scritte dopo il nome sostituiscono quelle
-di default (`tools\edge\start_edge_server.bat --backend model --model meshanything`). Da terminale, dalla radice del repository:
+di default (`tools\edge\start_edge_server.bat --backend model --model meshanything`). **Con un modello generativo**:
+doppio clic su **`tools\edge\start_model_server.bat`**, che chiede quale modello caricare (1 MeshAnything V2, 2 FastMesh,
+3 TreeMeshGPT) e quale oggetto ricostruire (0 = tutti) e lo avvia con `--time-budget-s 300`; da terminale il primo argomento è il modello e gli altri vanno al
+server (`tools\edge\start_model_server.bat fastmesh --objects box_01`; Linux/macOS: `tools/edge/start_model_server.sh`).
+Questo server risponde solo a questo PC (editor, laboratorio senza visore): **per il visore** c'è
+`tools\quest\server_wifi_model.bat`, con lo stesso menu. Per una sessione misurata col visore resta `tools\quest\session_wifi.bat --server-args "--backend model ..."`.
+Da terminale, dalla radice del repository:
 
 ```powershell
 python -m edge.server                                       # backend mock: inviluppo convesso, niente pesi né GPU
@@ -407,6 +413,7 @@ clic) usano `adb` di Unity:
 | `install_app.bat` | installa sul visore `Builds\OnDemandMeshVR.apk` (costruito da Unity) e lo avvia |
 | `server_usb.bat` | il visore raggiunge il server **attraverso il cavo** (`adb reverse`), poi avvia il server |
 | `server_wifi.bat` | scrive sul visore l'indirizzo del PC in rete (`edge_server.txt` nei dati dell'app, letto all'avvio: non serve rifare la build) e avvia il server raggiungibile dal Wi-Fi |
+| `server_wifi_model.bat` | come `server_wifi.bat`, ma con un modello generativo: chiede quale (1 MeshAnything V2, 2 FastMesh, 3 TreeMeshGPT) e quale oggetto ricostruire (0 = tutti, prima quello che guardi; 1-6 = solo quello, gli altri restano punti) e lo avvia con `--time-budget-s 300`; da terminale il primo argomento è il modello, gli altri vanno al server (`server_wifi_model.bat meshanything --objects box_01`) |
 | `show_logs.bat` | la Console dell'app sul visore, in diretta |
 | `pull_results.bat` | copia i CSV dei tempi dal visore in `benchmarks/results/quest/<data_ora>/` |
 | `session_usb.bat`, `session_wifi.bat` | una sessione di misura completa: collegamento, server con un log suo, riavvio dell'app, fps registrati dal visore; premendo Invio copia tutto in `benchmarks/results/quest/<data_ora>_usb` (o `_wifi`) e scrive `summary.md` |

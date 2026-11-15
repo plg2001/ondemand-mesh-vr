@@ -67,7 +67,8 @@ def test_copy_weights_copies_only_what_is_needed(tmp_path, monkeypatch):
 def test_launchers_exist_for_every_system():
     for name in ("setup_pc.bat", "setup_pc.sh"):
         assert (ROOT / name).exists(), name
-    for name in ("start_edge_server.bat", "start_edge_server.sh"):
+    for name in ("start_edge_server.bat", "start_edge_server.sh", "start_model_server.bat", "start_model_server.sh"):
         assert (ROOT / "tools" / "edge" / name).exists(), name
+    assert (ROOT / "tools" / "quest" / "server_wifi_model.bat").exists()
     attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
     assert "*.sh  text eol=lf" in attributes and "*.bat text eol=crlf" in attributes
