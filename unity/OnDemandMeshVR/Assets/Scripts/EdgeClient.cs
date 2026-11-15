@@ -157,7 +157,7 @@ public class EdgeClient
                 if (request.result == UnityWebRequest.Result.ConnectionError)
                 {
                     r.ConnectionFailed = true;
-                    r.Error += $"\nIs the server running and reachable at {BaseUrl}? On the PC: start_edge_server.bat " +
+                    r.Error += $"\nIs the server running and reachable at {BaseUrl}? On the PC: tools/edge/start_edge_server.bat " +
                                "(or tools/quest/server_usb.bat / server_wifi.bat for the headset).";
                 }
                 return r;

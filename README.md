@@ -262,7 +262,7 @@ Su Linux il profiler legge anche l'energia: della GPU via NVML (Volta+) e della 
    per esempio `.venv/bin/python tools/quest/quest.py session usb --server-args "--backend model --model meshanything"`.
    Serve anche Unity solo se si vuole ricostruire l'app: l'APK già installato sul visore basta.
 2. **Visore collegato a questo portatile, server sul PC del laboratorio**: sul laboratorio
-   `./start_edge_server.sh --host 0.0.0.0 --backend model --model meshanything --save-meshes benchmarks/results/edge_meshes`
+   `tools/edge/start_edge_server.sh --host 0.0.0.0 --backend model --model meshanything --save-meshes benchmarks/results/edge_meshes`
    (con `ufw` attivo: `sudo ufw allow 8000/tcp`); sul portatile
    `tools\quest\session_wifi.bat --server http://<indirizzo del laboratorio>:8000`. La sessione non avvia nessun
    server, misura la differenza tra gli orologi di visore, portatile e server, e alla fine scarica dal server le righe
@@ -280,10 +280,10 @@ Unity (SceneObject)     ── punti float32, ~24 KB ──►  server Edge (pyt
 Unity (RuntimeMeshLoader) ◄──── mesh .glb ───────────  + header con i tempi di ogni fase
 ```
 
-**Server**: il modo più semplice è il doppio clic su **`start_edge_server.bat`**, nella radice del repository.
+**Server**: il modo più semplice è il doppio clic su **`tools\edge\start_edge_server.bat`** (Linux/macOS: `tools/edge/start_edge_server.sh`).
 Avvia il backend mock con 2 s di inferenza simulata per oggetto; se un server è già acceso sulla porta 8000 non ne
 apre un secondo. Si ferma con `Ctrl+C` o chiudendo la finestra. Le opzioni scritte dopo il nome sostituiscono quelle
-di default (`start_edge_server.bat --backend model --model meshanything`). Da terminale, dalla radice del repository:
+di default (`tools\edge\start_edge_server.bat --backend model --model meshanything`). Da terminale, dalla radice del repository:
 
 ```powershell
 python -m edge.server                                       # backend mock: inviluppo convesso, niente pesi né GPU

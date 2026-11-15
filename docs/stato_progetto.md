@@ -36,7 +36,7 @@ Misure su questo PC (i5-9400, 8 GB RAM, GeForce GT 1030 da 2 GB), report in `ben
 
 | Parte | Dove | Cosa fa |
 |---|---|---|
-| Server Edge | `edge/`, `start_edge_server.bat` | FastAPI: riceve i punti (float32 grezzi), risponde con la mesh `.glb`; backend **mock** (involucro convesso, ritardo simulato) o **modello** vero; una richiesta alla volta |
+| Server Edge | `edge/`, `tools/edge/start_edge_server.bat` | FastAPI: riceve i punti (float32 grezzi), risponde con la mesh `.glb`; backend **mock** (involucro convesso, ritardo simulato) o **modello** vero; una richiesta alla volta |
 | Scena di prova | `data/scenes/` | `build_scene.py` + `demo_room.yaml`: 6 oggetti, ognuno come nuvola da 2048 punti (144 KB in tutto, contro 2743 KB delle mesh originali) |
 | App Unity | `unity/OnDemandMeshVR` | punti come segnaposto, richiesta all'Edge quando l'oggetto è inquadrato, rilascio dopo 3 s fuori vista, cache dei `.glb`, pannello di stato nel visore, log CSV dei tempi |
 | Quest | `tools/quest/`, menu Unity **Tools → Quest** | build dell'APK, installazione, server via cavo o Wi-Fi, log dal visore, copia dei risultati |
@@ -410,7 +410,7 @@ classici come asse della tesi, input realistici (rumore, buchi, scansioni vere),
 python -m pytest -q tests                      # 82 test, senza pesi né GPU
 setup_pc.bat                                   # prepara o controlla il PC (Linux/macOS: ./setup_pc.sh)
 python tools\setup_pc.py --export-checkpoints E:\checkpoints   # pesi su disco esterno per un altro PC
-start_edge_server.bat                          # server mock per le prove nell'editor
+tools\edge\start_edge_server.bat              # server mock per le prove nell'editor
 tools\quest\check_headset.bat                  # il Quest è collegato e autorizzato?
 tools\quest\server_usb.bat                     # server + collegamento via cavo (prima prova)
 tools\quest\server_wifi.bat                    # server raggiungibile dal Wi-Fi

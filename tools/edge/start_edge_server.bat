@@ -2,13 +2,13 @@
 rem Double-click to start the edge server of ondemand-mesh-vr.
 rem Default: mock backend (convex hull) with 2 s of simulated inference per object.
 rem Options typed after the name replace the default, e.g. from a terminal:
-rem     start_edge_server.bat --mock-delay-s 0
-rem     start_edge_server.bat --backend model --model meshanything
-rem     start_edge_server.bat --help
+rem     tools\edge\start_edge_server.bat --mock-delay-s 0
+rem     tools\edge\start_edge_server.bat --backend model --model meshanything
+rem     tools\edge\start_edge_server.bat --help
 rem Stop the server with Ctrl+C (then answer Y), or close the window.
 
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0..\.."
 title Edge server - ondemand-mesh-vr
 
 set "PYTHON=.venv\Scripts\python.exe"
