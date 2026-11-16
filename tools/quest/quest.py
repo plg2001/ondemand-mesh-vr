@@ -1,6 +1,7 @@
 """Helpers to test the Unity app on a Meta Quest connected to this PC with a USB cable (adb).
 
-Windows: double-click the .bat files next to this script. Any system (Windows, Linux, macOS), from the repository root:
+Windows: EdgeControl.exe in the repository root runs all of these from one window (pages Server and Visore). Any system
+(Windows, Linux, macOS), from the repository root:
     python tools/quest/quest.py check          # headset connected and authorised? Android recent enough? app installed?
     python tools/quest/quest.py install        # install Builds/OnDemandMeshVR.apk (--run also starts it)
     python tools/quest/quest.py usb --serve    # the app reaches the edge server through the cable; start the server
@@ -292,14 +293,15 @@ def serve(args, host: str, lan_url: Optional[str] = None) -> int:
     local = f"http://127.0.0.1:{args.port}"
     if server_answers(local):
         if lan_url and not server_answers(lan_url):
-            print("An edge server is running but only for this PC (127.0.0.1): close its window, then run this again.")
+            print("An edge server is running but only for this PC (127.0.0.1): stop it (close its window, or "
+                  "«Ferma server» in EdgeControl), then run this again.")
             return 1
         print("An edge server is already running: keeping it.")
         return 0
     cmd = [sys.executable, "-m", "edge.server", "--host", host, "--port", str(args.port),
            *shlex.split(args.server_args)]
     print("Starting the edge server: " + " ".join(cmd[2:]))
-    print("Close this window (or Ctrl+C) to stop it.\n")
+    print("Ctrl+C (in EdgeControl: «Ferma server») stops it.\n")
     try:
         return subprocess.call(cmd, cwd=ROOT)
     except KeyboardInterrupt:
@@ -507,7 +509,7 @@ def cmd_session(adb: Adb, args) -> int:
         print(f"Cannot read the app's package name from {PROJECT_SETTINGS}")
         return 1
     if f"package:{package}" not in adb.shell("pm", "list", "packages", package).split():
-        print(f"The app {package} is not installed: install it first (install_app.bat, or "
+        print(f"The app {package} is not installed: install it first (EdgeControl.exe, page Visore, or "
               f"python tools/quest/quest.py install).")
         return 1
 
@@ -566,7 +568,8 @@ def cmd_session(adb: Adb, args) -> int:
         pass  # running on the other PC
     elif server_answers(local):
         if args.link == "wifi" and not server_answers(url):
-            print("An edge server is running but only for this PC (127.0.0.1): close its window, then run this again.")
+            print("An edge server is running but only for this PC (127.0.0.1): stop it (close its window, or "
+                  "«Ferma server» in EdgeControl), then run this again.")
             return 1
         print("An edge server is already running: keeping it; its rows of this session are copied at the end.")
     else:
@@ -649,7 +652,7 @@ def cmd_session(adb: Adb, args) -> int:
     return 0
 
 
-def main(argv=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=8000, help="edge server port (default 8000)")
     sub = ap.add_subparsers(dest="command", required=True)
@@ -672,8 +675,11 @@ def main(argv=None) -> int:
                    help="wifi: use the edge server already running on another PC, e.g. http://192.168.1.50:8000")
     p.add_argument("--ip", default=None, help="wifi: this PC's address to give the headset (default: detected)")
     p.add_argument("--no-restart", action="store_true", help="do not restart the app at the start of the session")
-    args = ap.parse_args(argv)
+    return ap
 
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
     adb_path = find_adb()
     if adb_path is None:
         print("adb not found. It comes with Unity's Android Build Support (Unity Hub > Installs > Add modules), "

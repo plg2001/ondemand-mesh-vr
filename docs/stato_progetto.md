@@ -1,4 +1,4 @@
-# Stato del progetto (11 novembre 2026)
+# Stato del progetto (15 novembre 2026)
 
 Riassunto per riprendere il lavoro, per te e per chi apre una nuova conversazione con l'assistente. Descrive **dove
 siamo, cosa è stato misurato, cosa non è stato verificato e cosa resta da fare**. Come è fatto il codice è in
@@ -36,10 +36,11 @@ Misure su questo PC (i5-9400, 8 GB RAM, GeForce GT 1030 da 2 GB), report in `ben
 
 | Parte | Dove | Cosa fa |
 |---|---|---|
-| Server Edge | `edge/`, `tools/edge/start_edge_server.bat` | FastAPI: riceve i punti (float32 grezzi), risponde con la mesh `.glb`; backend **mock** (involucro convesso, ritardo simulato) o **modello** vero; una richiesta alla volta |
+| Server Edge | `edge/`, `EdgeControl.exe` (pagina Server) | FastAPI: riceve i punti (float32 grezzi), risponde con la mesh `.glb`; backend **mock** (involucro convesso, ritardo simulato) o **modello** vero; una richiesta alla volta |
 | Scena di prova | `data/scenes/` | `build_scene.py` + `demo_room.yaml`: 6 oggetti, ognuno come nuvola da 2048 punti (144 KB in tutto, contro 2743 KB delle mesh originali) |
 | App Unity | `unity/OnDemandMeshVR` | punti come segnaposto, richiesta all'Edge quando l'oggetto è inquadrato, rilascio dopo 3 s fuori vista, cache dei `.glb`, pannello di stato nel visore, log CSV dei tempi |
-| Quest | `tools/quest/`, menu Unity **Tools → Quest** | build dell'APK, installazione, server via cavo o Wi-Fi, log dal visore, copia dei risultati |
+| Quest | `tools/quest/quest.py`, menu Unity **Tools → Quest** | build dell'APK, installazione, server via cavo o Wi-Fi, log dal visore, copia dei risultati, sessioni di misura |
+| Pannello di controllo | `EdgeControl.exe` (sorgenti in `tools/control/`) | una finestra per Windows con server, visore, sessioni, risultati e preparazione del PC, e una console: dal 15 novembre sostituisce i 12 file `.bat` (README, sezione 8.1) |
 
 Stato sul visore: l'app è stata **provata sul Quest 2**: l'analogico difettoso non muove più nulla
 (`disableStickLocomotion`) e il comportamento è uguale a quello nel simulatore. Misure dal visore in
@@ -88,13 +89,13 @@ Wi-Fi.**
   alla fine, `benchmarks/quest_report.py` la corregge e avvisa se cambia durante la sessione.
 - **Gli fps non sono nei CSV dell'app** (si vedono solo sul pannello). Il visore però scrive ogni secondo nel log
   di Android una riga `VrApi` con fps, frame scartati, tempo per frame, uso di CPU e GPU e temperatura: la
-  registra `tools\quest\session_usb.bat` / `session_wifi.bat` (sezione 8). Le righe vengono anche da altri processi
+  registra la sessione di misura (oggi «Sessione di misura» in EdgeControl, o `quest.py session`; README sezione 8). Le righe vengono anche da altri processi
   (il menu di sistema a 90 Hz) e vanno filtrate per processo; col visore non indossato non ce ne sono. Prime misure
   nella sezione 4.2.
 
 ### 4.2 Cavo contro Wi-Fi sul Quest 2 (11 novembre, backend mock da 2 s)
 
-Una sessione per collegamento con `session_usb.bat` / `session_wifi.bat` (circa 40 s ciascuna, 6 oggetti, app
+Una sessione per collegamento con `session_usb.bat` / `session_wifi.bat` (oggi: «Sessione di misura» in EdgeControl; circa 40 s ciascuna, 6 oggetti, app
 riavviata, orologi allineati a +0,06 s): `benchmarks/results/quest/20261111_115613_usb/` e `20261111_115405_wifi/`,
 con `summary.md`. Il server conferma il collegamento: 6 richieste da `127.0.0.1` via cavo, 6 da `192.168.1.28` (il
 visore) via Wi-Fi.
@@ -324,6 +325,12 @@ In tutte e quattro le sessioni l'app è rimasta a 72 fps, a parte il solito calo
 - **Cavo contro Wi-Fi**: c'è una sola sessione per collegamento (5 richieste dopo la prima), con il backend mock, in un
   solo posto e momento (distanza dal router non annotata). Non provati: più sessioni, distanza, rete carica, mesh più grandi dei modelli veri.
 - Il **tracciamento delle mani** (attivo nel progetto per Android).
+- **EdgeControl** (15 novembre), provato su questo PC (schermo 1366×768 al 100%) comandandolo da script: server per il
+  simulatore (mock e Ball Pivoting con la sola scatola) con richieste come quelle del visore, arresto (processi e porta
+  liberati), sessione Wi-Fi senza riavvio dell'app fino a «Termina e salva» e al riassunto, controllo del visore, comando
+  scritto nella console, chiusura con il server acceso (conferma, server fermato). **Non provati dall'app**:
+  installazione dell'APK, sessione via cavo, server con un modello generativo, log dal vivo, «Prepara il PC», schermi
+  con ridimensionamento sopra il 100% e altri PC.
 - **Un altro PC**: `setup_pc` è stato provato solo qui (prova a vuoto, e verifica dei pesi senza rete: 35 s, nessun
   download, checksum uguali al lock); mai su Linux né su un PC nuovo. La sessione con `--server` è stata provata con
   server e client sullo stesso PC (scaricamento di righe e mesh, orologi), non ancora con due PC.
@@ -337,7 +344,7 @@ In tutte e quattro le sessioni l'app è rimasta a 72 fps, a parte il solito calo
 ## 6. Da fare (in ordine suggerito)
 
 1. Cavo contro Wi-Fi: primo confronto fatto (sezione 4.2). Per numeri da tesi ripetere 3 sessioni per collegamento
-   (`session_usb.bat` / `session_wifi.bat`), annotando distanza dal router e altri dispositivi.
+   (EdgeControl: «Sessione di misura» via cavo e via Wi-Fi), annotando distanza dal router e altri dispositivi.
 2. **Correzioni dell'app: fatte e provate in parte sul visore (sezione 4.5).** Resta il calo di fps alla prima
    mesh, che la preparazione all'avvio non toglie. Coda: prima l'oggetto
    più vicino al centro della vista (*Queue Order*, `Nearest` per il comportamento di prima); gli oggetti che il
@@ -350,9 +357,10 @@ In tutte e quattro le sessioni l'app è rimasta a 72 fps, a parte il solito calo
 3. Modello vero con il visore: fatto per la scatola con MeshAnything V2 (sezione 4.4, comando nel README). Restano
    gli altri modelli, la mesh completa di TreeMeshGPT e soprattutto il PC del laboratorio, per i numeri sulla GPU
    potente con tutti gli oggetti. **Il progetto è pronto per un altro PC** (12 novembre): `setup_pc.sh` /
-   `setup_pc.bat` lo prepara con un comando (README, sezione 0), i pesi possono arrivare da un disco esterno
+   EdgeControl (Strumenti → Prepara / controlla il PC) lo prepara con un comando (README, sezione 0), i pesi possono arrivare da un disco esterno
    (`--export-checkpoints` qui, `--checkpoints-from` là) e il visore può stare sul PC del laboratorio oppure su questo
-   portatile con il server là (`session_wifi.bat --server http://<indirizzo>:8000`, README sezione 7). La tabella
+   portatile con il server là (EdgeControl: «server su un altro PC», o `quest.py session wifi --server http://<indirizzo>:8000`;
+   README sezione 7). La tabella
    della tesi (tempo, memoria e accuratezza per forma e per modello, senza visore) si fa con lo sweep della Fase 1,
    `run_benchmarks`, sulle sei forme della scena: comando nel README, sezione 5. Da novembre misura anche con le
    **normali stimate** dai punti (`--normals estimate`), come succede col visore: tutti i numeri della Fase 1 usano
@@ -398,8 +406,8 @@ classici come asse della tesi, input realistici (rumore, buchi, scansioni vere),
   `Assets/XR/Settings/OpenXRPackageSettings.asset` (identificativi rinumerati). Si scartano con Unity chiuso.
 - **Portabilità** (12 novembre): niente dipende più da questo PC. Percorsi relativi al progetto, pesi e cache in
   `checkpoints/` alle revisioni di `models/upstream.lock.json` (prima `setup_models.py` scaricava l'ultima versione
-  da Hugging Face, mentre i wrapper caricano quella fissata), `adb` cercato su Windows, Linux e macOS, lanciatori
-  `.bat` e `.sh` con i fine riga fissati da `.gitattributes`, orari dei log assoluti (`t_epoch`) e fuso del visore
+  da Hugging Face, mentre i wrapper caricano quella fissata), `adb` cercato su Windows, Linux e macOS, pannello
+  `EdgeControl.exe` (nessuna installazione) e script `.sh` con i fine riga fissati da `.gitattributes`, orari dei log assoluti (`t_epoch`) e fuso del visore
   registrato, così i riassunti escono uguali su qualunque PC.
 - Documentazione e README in italiano, codice e commenti in inglese. Lo studente non conosceva Unity né i visori:
   spiegare i passaggi uno per uno, nominare ogni file e dire sempre cosa è **verificato** e cosa è solo previsto.
@@ -408,18 +416,17 @@ classici come asse della tesi, input realistici (rumore, buchi, scansioni vere),
 
 ```powershell
 python -m pytest -q tests                      # 82 test, senza pesi né GPU
-setup_pc.bat                                   # prepara o controlla il PC (Linux/macOS: ./setup_pc.sh)
+EdgeControl.exe                                # TUTTO da una finestra: server, visore, sessioni, risultati, setup
+./setup_pc.sh                                  # prepara o controlla il PC su Linux/macOS (Windows: EdgeControl > Strumenti)
 python tools\setup_pc.py --export-checkpoints E:\checkpoints   # pesi su disco esterno per un altro PC
-tools\edge\start_edge_server.bat              # server mock per le prove nell'editor
-tools\edge\start_model_server.bat             # server con un modello generativo, solo per questo PC (chiede quale)
-tools\quest\check_headset.bat                  # il Quest è collegato e autorizzato?
-tools\quest\server_usb.bat                     # server + collegamento via cavo (prima prova)
-tools\quest\server_wifi.bat                    # server raggiungibile dal Wi-Fi
-tools\quest\server_wifi_model.bat              # come sopra, con un modello generativo (chiede modello e oggetto)
-tools\quest\install_app.bat                    # installa Builds\OnDemandMeshVR.apk
-tools\quest\pull_results.bat                   # copia i CSV dei tempi dal visore
-tools\quest\session_usb.bat                    # sessione di misura via cavo (anche session_wifi.bat)
-tools\quest\session_wifi.bat --server http://<ip>:8000   # sessione con il server su un altro PC
+python tools\control\build.py                # ricompila EdgeControl.exe dopo una modifica a tools\control\src
+python -m edge.server --mock-delay-s 2         # server mock per le prove nell'editor (da terminale)
+python tools\quest\quest.py check              # il Quest è collegato e autorizzato?
+python tools\quest\quest.py wifi --serve --server-args "--backend model --model meshanything --time-budget-s 300 --objects box_01"
+python tools\quest\quest.py install --run      # installa Builds\OnDemandMeshVR.apk
+python tools\quest\quest.py pull               # copia i CSV dei tempi dal visore
+python tools\quest\quest.py session usb        # sessione di misura via cavo (anche: session wifi)
+python tools\quest\quest.py session wifi --server http://<ip>:8000   # sessione con il server su un altro PC
 python -m benchmarks.quest_report <cartella>   # rigenera summary.md di una cartella in benchmarks/results/quest
 python data\scenes\build_scene.py              # rigenera la scena di prova
 ```

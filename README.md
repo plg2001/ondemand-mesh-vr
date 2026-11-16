@@ -57,8 +57,11 @@ benchmarks/                 profiler, modello FLOPs/memoria, stimatore visore, s
   results/                  report JSON/CSV/Markdown: final_* = Fase 1, quest/ = sessioni sul visore
 docs/                       stato del progetto, analisi dei requisiti, metodologia, risultati
 edge/                       server Edge prototipo (FastAPI): nuvola di punti in ingresso, mesh .glb in uscita
-tools/quest/                strumenti per il Quest (doppio clic): verifica, installazione, sessioni di misura,
-                            server via cavo o Wi-Fi, log (vedi sezione 8)
+EdgeControl.exe             pannello di controllo per Windows (doppio clic): server, visore, sessioni, risultati,
+                            preparazione del PC, con una console (sezione 8.1); sorgenti in tools/control/
+tools/quest/quest.py        strumenti per il Quest da riga di comando: verifica, installazione, sessioni di misura,
+                            server via cavo o Wi-Fi, log (vedi sezione 8); EdgeControl li usa
+tools/edge/*.sh             avvio del server su Linux / macOS (il PC del laboratorio)
 unity/OnDemandMeshVR/       progetto Unity 6.3 (template VR): client che chiede le mesh al server e le mostra
 tests/                      test unitari (pytest)
 third_party/, checkpoints/  codice e pesi upstream (scaricati, non versionati)
@@ -73,9 +76,12 @@ third_party/, checkpoints/  codice e pesi upstream (scaricati, non versionati)
 
 ```bash
 git clone https://github.com/plg2001/ondemand-mesh-vr.git && cd ondemand-mesh-vr
-./setup_pc.sh                                   # Linux / macOS   (Windows: doppio clic su setup_pc.bat)
+./setup_pc.sh                                   # Linux / macOS
 ./setup_pc.sh --checkpoints-from /media/usb/checkpoints   # pesi da un disco esterno invece che da internet
 ```
+
+Su Windows: doppio clic su **`EdgeControl.exe`**, pagina **Strumenti → Prepara / controlla il PC** (si apre anche
+senza l'ambiente Python; «Pesi da» = `--checkpoints-from`), oppure da terminale `py tools\setup_pc.py`.
 
 `tools/setup_pc.py` prepara tutto e si può rilanciare (salta quello che è già fatto; su questo PC controlla soltanto):
 ambiente `.venv` con **Python 3.11** (con `uv`, se c'è, che scarica da solo il 3.11; altrimenti `py -3.11` /
@@ -83,18 +89,18 @@ ambiente `.venv` con **Python 3.11** (con `uv`, se c'è, che scarica da solo il 
 GT 1030 alla RTX 40, CPU senza NVIDIA; `--cuda` la forza) e poi `requirements.txt`; codice dei modelli ai commit
 fissati e **pesi alle revisioni di `models/upstream.lock.json`** (stessi file su ogni PC, controllati con sha256); nuvole
 di prova e scena con le nuvole di riferimento per l'accuratezza; test. Opzioni: `--dry-run` (mostra soltanto),
-`--skip-weights`, `--no-tests`.
+`--skip-weights`, `--no-tests` (in EdgeControl sono le caselle della stessa pagina).
 
 **Pesi su disco esterno** (11 GB, utile se la rete del laboratorio è lenta o Google Drive blocca TreeMeshGPT): su questo
-PC `python tools/setup_pc.py --export-checkpoints E:/checkpoints` copia solo i 6 file dei pesi (10,6 GB, senza i
+PC `python tools/setup_pc.py --export-checkpoints E:/checkpoints` (in EdgeControl: «Esporta i pesi…») copia solo i 6 file dei pesi (10,6 GB, senza i
 doppioni della cache di Hugging Face); sull'altro PC `--checkpoints-from <quella cartella>` li copia e li verifica senza
 scaricare nulla. Su Ubuntu senza Python 3.11: `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt install
 python3.11 python3.11-venv`, oppure installare [uv](https://docs.astral.sh/uv/).
 
 Tutto il resto è indipendente dal sistema: percorsi relativi alla cartella del progetto, pesi e cache dentro
 `checkpoints/`, orari dei log in secondi dal 1970 (`t_epoch`) e fuso del visore registrato a ogni sessione, `adb`
-cercato nei posti usuali di Windows, Linux e macOS, lanciatori `.bat` (Windows) e `.sh` (Linux/macOS) con i fine riga
-giusti grazie a `.gitattributes`.
+cercato nei posti usuali di Windows, Linux e macOS, `EdgeControl.exe` (Windows, nessuna installazione: usa il .NET
+Framework di Windows) e script `.sh` (Linux/macOS) con i fine riga giusti grazie a `.gitattributes`.
 
 ## 1. Ambiente (Windows 11, Python 3.11)
 
@@ -263,8 +269,9 @@ Su Linux il profiler legge anche l'energia: della GPU via NVML (Volta+) e della 
    Serve anche Unity solo se si vuole ricostruire l'app: l'APK già installato sul visore basta.
 2. **Visore collegato a questo portatile, server sul PC del laboratorio**: sul laboratorio
    `tools/edge/start_edge_server.sh --host 0.0.0.0 --backend model --model meshanything --save-meshes benchmarks/results/edge_meshes`
-   (con `ufw` attivo: `sudo ufw allow 8000/tcp`); sul portatile
-   `tools\quest\session_wifi.bat --server http://<indirizzo del laboratorio>:8000`. La sessione non avvia nessun
+   (con `ufw` attivo: `sudo ufw allow 8000/tcp`); sul portatile, in EdgeControl, pagina Server: «Quest via Wi-Fi», spunta
+   «server su un altro PC» con `http://<indirizzo del laboratorio>:8000` e «Sessione di misura» (da terminale:
+   `python tools\quest\quest.py session wifi --server http://<indirizzo del laboratorio>:8000`). La sessione non avvia nessun
    server, misura la differenza tra gli orologi di visore, portatile e server, e alla fine scarica dal server le righe
    del suo log e le mesh di questa sessione (`GET /requests`, `GET /meshes/...`). Le reti universitarie spesso
    isolano i dispositivi: se il visore non raggiunge il server, serve un router proprio (o il modo 1).
@@ -280,15 +287,10 @@ Unity (SceneObject)     ── punti float32, ~24 KB ──►  server Edge (pyt
 Unity (RuntimeMeshLoader) ◄──── mesh .glb ───────────  + header con i tempi di ogni fase
 ```
 
-**Server**: il modo più semplice è il doppio clic su **`tools\edge\start_edge_server.bat`** (Linux/macOS: `tools/edge/start_edge_server.sh`).
-Avvia il backend mock con 2 s di inferenza simulata per oggetto; se un server è già acceso sulla porta 8000 non ne
-apre un secondo. Si ferma con `Ctrl+C` o chiudendo la finestra. Le opzioni scritte dopo il nome sostituiscono quelle
-di default (`tools\edge\start_edge_server.bat --backend model --model meshanything`). **Con un modello generativo**:
-doppio clic su **`tools\edge\start_model_server.bat`**, che chiede quale modello caricare (1 MeshAnything V2, 2 FastMesh,
-3 TreeMeshGPT) e quale oggetto ricostruire (0 = tutti) e lo avvia con `--time-budget-s 300`; da terminale il primo argomento è il modello e gli altri vanno al
-server (`tools\edge\start_model_server.bat fastmesh --objects box_01`; Linux/macOS: `tools/edge/start_model_server.sh`).
-Questo server risponde solo a questo PC (editor, laboratorio senza visore): **per il visore** c'è
-`tools\quest\server_wifi_model.bat`, con lo stesso menu. Per una sessione misurata col visore resta `tools\quest\session_wifi.bat --server-args "--backend model ..."`.
+**Server**: su Windows si avvia da **`EdgeControl.exe`**, pagina Server (sezione 8.1): chi lo usa (simulatore, Quest
+via Wi-Fi o via cavo), come ricostruisce (finto con 2 s di attesa, modello generativo con il limite di tempo, metodo
+classico) e quali oggetti, poi «Avvia server». Linux/macOS: `tools/edge/start_edge_server.sh` (mock, 2 s; le opzioni
+scritte dopo il nome sostituiscono quelle di default) e `tools/edge/start_model_server.sh <modello> [opzioni]`.
 Da terminale, dalla radice del repository:
 
 ```powershell
@@ -404,30 +406,32 @@ gira sul visore. I file di `StreamingAssets` si leggono anche da dentro l'`.apk`
 dello sguardo mostra server, oggetti e fps, e i materiali dei punti e del pannello stanno in `Assets/Resources` per
 finire sempre nella build. In Unity, **Tools → Quest → Prepare and build APK** (`Assets/Editor/QuestBuild.cs`)
 applica le impostazioni per il Quest (API minima 29, Internet, IL2CPP/ARM64, simulatore `EditorOnly`) e costruisce
-`unity/OnDemandMeshVR/Builds/OnDemandMeshVR.apk`, senza bisogno del visore. Gli strumenti in `tools/quest/` (doppio
-clic) usano `adb` di Unity:
+`unity/OnDemandMeshVR/Builds/OnDemandMeshVR.apk`, senza bisogno del visore. Per il resto c'è `EdgeControl.exe`
+(sezione 8.1) o, da terminale e su ogni sistema, `tools/quest/quest.py`, che usa `adb` di Unity:
 
-| Script | Cosa fa |
-|---|---|
-| `check_headset.bat` | visore collegato e autorizzato? Android abbastanza recente? app installata? |
-| `install_app.bat` | installa sul visore `Builds\OnDemandMeshVR.apk` (costruito da Unity) e lo avvia |
-| `server_usb.bat` | il visore raggiunge il server **attraverso il cavo** (`adb reverse`), poi avvia il server |
-| `server_wifi.bat` | scrive sul visore l'indirizzo del PC in rete (`edge_server.txt` nei dati dell'app, letto all'avvio: non serve rifare la build) e avvia il server raggiungibile dal Wi-Fi |
-| `server_wifi_model.bat` | come `server_wifi.bat`, ma con un modello generativo: chiede quale (1 MeshAnything V2, 2 FastMesh, 3 TreeMeshGPT) e quale oggetto ricostruire (0 = tutti, prima quello che guardi; 1-6 = solo quello, gli altri restano punti) e lo avvia con `--time-budget-s 300`; da terminale il primo argomento è il modello, gli altri vanno al server (`server_wifi_model.bat meshanything --objects box_01`) |
-| `show_logs.bat` | la Console dell'app sul visore, in diretta |
-| `pull_results.bat` | copia i CSV dei tempi dal visore in `benchmarks/results/quest/<data_ora>/` |
-| `session_usb.bat`, `session_wifi.bat` | una sessione di misura completa: collegamento, server con un log suo, riavvio dell'app, fps registrati dal visore; premendo Invio copia tutto in `benchmarks/results/quest/<data_ora>_usb` (o `_wifi`) e scrive `summary.md` |
+| Comando (`python tools/quest/quest.py ...`) | Cosa fa | In EdgeControl |
+|---|---|---|
+| `check` | visore collegato e autorizzato? Android abbastanza recente? app installata? | Visore → Controllo completo |
+| `install --run` | installa sul visore `Builds\OnDemandMeshVR.apk` (costruito da Unity) e lo avvia | Visore → Installa e avvia |
+| `usb --serve` | il visore raggiunge il server **attraverso il cavo** (`adb reverse`), poi avvia il server | Server → Quest via cavo USB |
+| `wifi --serve` | scrive sul visore l'indirizzo del PC in rete (`edge_server.txt` nei dati dell'app, letto all'avvio: non serve rifare la build) e avvia il server raggiungibile dal Wi-Fi | Server → Quest via Wi-Fi |
+| `logs` | la Console dell'app sul visore, in diretta | Visore → Log Unity dal vivo |
+| `pull` | copia i CSV dei tempi dal visore in `benchmarks/results/quest/<data_ora>/` | Visore o Risultati → Copia i CSV |
+| `session usb` / `session wifi` | una sessione di misura completa: collegamento, server con un log suo, riavvio dell'app, fps registrati dal visore; con Invio copia tutto in `benchmarks/results/quest/<data_ora>_usb` (o `_wifi`) e scrive `summary.md` | Server → Sessione di misura, poi Termina e salva |
 
+Le opzioni del server passano con `--server-args`, per esempio
+`quest.py wifi --serve --server-args "--backend model --model meshanything --time-budget-s 300 --objects box_01"`.
 Il riassunto si può rigenerare, anche per le cartelle vecchie, con
-`python -m benchmarks.quest_report benchmarks/results/quest/<cartella>`.
+`python -m benchmarks.quest_report benchmarks/results/quest/<cartella>` (EdgeControl: Risultati → Rigenera il riassunto).
 
 Note pratiche per le sessioni:
 - il cavo resta collegato anche nella sessione Wi-Fi: porta solo il registro degli fps, le richieste passano dal Wi-Fi;
-- per finire, **sempre Invio** nella finestra, mai la X: i risultati si salvano solo dopo Invio. Va bene anche
-  togliere prima il visore: si perdono solo gli fps degli ultimi secondi (in standby non si disegna nulla);
-- per un modello vero: `tools\quest\session_wifi.bat --server-args "--backend model --model meshanything --time-budget-s 300 --objects box_01"`.
+- per finire, **sempre «Termina e salva»** (da terminale: Invio), mai «Interrompi» o la X: i risultati si salvano
+  solo così. Va bene anche togliere prima il visore: si perdono solo gli fps degli ultimi secondi (in standby non si
+  disegna nulla);
+- per un modello vero: Modello generativo, MeshAnything V2, rinuncia dopo 300 s, solo la scatola.
   Sulla GT 1030 MeshAnything V2 ricostruisce la scatola in circa 70 s e non finisce le altre forme in 5 minuti;
-  `--objects` rifiuta subito gli altri oggetti, invece di spendere 5 minuti per ognuno prima di arrendersi;
+  `--objects` («Solo questi») rifiuta subito gli altri oggetti, invece di spendere 5 minuti per ognuno prima di arrendersi;
 - Wi-Fi: la prima volta Windows Defender chiede l'accesso, va consentito sulle **reti private**, e la rete del PC deve
   essere *privata* (*Impostazioni → Rete e Internet → Wi-Fi*); prova da telefono: `http://<ip del PC>:8000/health`;
 - l'orologio del PC può essere sbagliato di qualche secondo: la sessione misura la differenza col visore e il
@@ -439,6 +443,66 @@ Limiti del prototipo:
 - le misure lato Unity riguardano il dispositivo su cui gira: il PC nell'editor, il Quest nella build;
 - il progetto Unity consente HTTP non cifrato (*Allow downloads over HTTP* = *Always allowed*): accettabile in
   una rete locale di laboratorio, non per un'app pubblicata.
+
+### 8.1 EdgeControl: il pannello di controllo (Windows)
+
+**`EdgeControl.exe`**, nella cartella del progetto, riunisce in una finestra quello che facevano i file `.bat`: doppio
+clic e si sceglie cosa fare. Non va installato (usa il .NET Framework 4.8 che c'è in Windows 10/11) e non apre
+terminali: esegue gli stessi script del progetto (`python -m edge.server`, `tools/quest/quest.py`, `tools/setup_pc.py`)
+e ne mostra l'output nella console in basso.
+
+- **In alto, sempre visibili**: il server (spento, in avvio, acceso: cosa ricostruisce, se è raggiungibile dalla rete,
+  quante richieste), il visore (collegato via cavo, da autorizzare, batteria, app aperta; senza cavo, l'ultima richiesta
+  arrivata via Wi-Fi) e questo PC (indirizzo in rete, memoria e uso della GPU). Un clic apre la pagina corrispondente.
+- **Server**: (1) chi lo usa: *Simulatore Unity su questo PC* (`python -m edge.server`, risponde solo a questo PC),
+  *Quest via Wi-Fi* (`quest.py wifi --serve`: scrive l'indirizzo sul visore se è collegato col cavo e avvia il server
+  raggiungibile dalla rete; si può scegliere l'IP se il PC ne ha più d'uno), *Quest via cavo USB* (`quest.py usb
+  --serve`); (2) come ricostruisce: *finto* (involucro convesso, con l'attesa in secondi), *modello generativo*
+  (MeshAnything V2, FastMesh, TreeMeshGPT; «rinuncia dopo» = `--time-budget-s`, 300 s di default), *metodo classico*
+  (Ball Pivoting, Poisson, alpha shape, involucro convesso; riduzione a N triangoli); (3) quali oggetti: tutti, oppure
+  solo quelli spuntati (`--objects`: gli altri restano punti). «Opzioni avanzate»: porta, dispositivo, precisione,
+  variante, token massimi, misura dell'accuratezza, salvataggio delle mesh, altre opzioni. La riga «Comando» mostra il
+  comando esatto (si può copiare). Se c'è già un server acceso fuori dall'app, l'app lo dice e può fermarlo.
+- **Sessione di misura** (stessa pagina, con le stesse scelte; Quest via Wi-Fi o via cavo): «riavvia l'app»
+  (altrimenti `--no-restart`), «server su un altro PC» (`--server`, solo Wi-Fi). Mostra da quanto è in corso, gli fps
+  dell'app e le richieste; «Termina e salva» manda l'Invio, poi «Riassunto» apre il `summary.md` della sessione.
+  Chiudere l'app durante una sessione chiede se terminarla e salvarla prima.
+- **Visore**: stato (modello, Android, batteria, app installata e quando, indirizzo del server usato dall'app, tunnel
+  USB, indirizzo Wi-Fi del visore), «Controllo completo», «Installa e avvia» (avvisa quando l'APK sul PC è più recente di
+  quella installata), Avvia / Riavvia / Chiudi l'app, dove l'app cerca il server (Wi-Fi di questo PC, cavo USB, un
+  altro PC) senza avviarlo, log di Unity dal vivo, copia dei CSV.
+- **Risultati**: le cartelle di `benchmarks/results/quest` con data, collegamento e cosa ricostruiva il server;
+  anteprima di `summary.md`, apertura della cartella, «Rigenera il riassunto».
+- **Strumenti**: «Prepara / controlla il PC» (`tools/setup_pc.py`, con le sue opzioni e i pesi da un'altra cartella),
+  «Esporta i pesi», altri comandi del progetto (test, scena di prova, nuvole, modelli, metodi classici, tabelle dei
+  requisiti, stato della GPU) e scorciatoie (cartella, README, stato del progetto, API del server, log del server,
+  progetto Unity).
+- **Console**: una scheda per il server, una con le **richieste** ricevute dal server (ora, oggetto, esito, tempo,
+  triangoli, F-score, da dove), una per la sessione, una per il log del visore e una per gli altri comandi; il pallino
+  verde indica cosa è in corso. «Interrompi» ferma il processo e tutto quello che ha avviato. Nella riga in basso si
+  risponde al processo in corso o, se non ce n'è, si scrive un comando qualsiasi, eseguito nella cartella del progetto
+  con la `.venv` attiva (frecce su/giù: comandi precedenti).
+- Chiudendo l'app si fermano, dopo una conferma, anche i processi che ha avviato (anche se l'app si chiudesse per un
+  errore: nessun server resta acceso di nascosto). Le scelte vengono ricordate
+  (`%LOCALAPPDATA%\ondemand-mesh-vr\EdgeControl.ini`); un secondo doppio clic riporta in primo piano quella già aperta.
+
+| Prima (file rimossi) | In EdgeControl |
+|---|---|
+| `tools\edge\start_edge_server.bat` | Server: Simulatore Unity, Finto, Avvia server |
+| `tools\edge\start_model_server.bat` | Server: Simulatore Unity, Modello generativo, oggetti, Avvia server |
+| `tools\quest\server_usb.bat`, `server_wifi.bat` | Server: Quest via cavo USB / via Wi-Fi, Avvia server |
+| `tools\quest\server_wifi_model.bat` | Server: Quest via Wi-Fi, Modello generativo, Solo questi, Avvia server |
+| `tools\quest\session_usb.bat`, `session_wifi.bat` | Server: Sessione di misura, poi Termina e salva |
+| `tools\quest\check_headset.bat` | Visore: Controllo completo (lo stato essenziale è sempre in alto) |
+| `tools\quest\install_app.bat` | Visore: Installa e avvia |
+| `tools\quest\show_logs.bat` | Visore: Log Unity dal vivo |
+| `tools\quest\pull_results.bat` | Visore o Risultati: Copia i CSV |
+| `setup_pc.bat` | Strumenti: Prepara / controlla il PC |
+
+Sorgenti in `tools/control/src/*.cs` (C# per il .NET Framework 4.8, Windows Forms). Dopo una modifica
+`python tools/control/build.py` ricompila `EdgeControl.exe` in pochi secondi, con il compilatore C# del .NET SDK o con
+quello dentro Unity; `tests/test_control_app.py` controlla che l'exe corrisponda ai sorgenti e che le opzioni che passa
+esistano davvero negli script. `EdgeControl.exe --snapshot <cartella>` salva un'immagine di ogni pagina ed esce.
 
 ## Note e limiti noti
 

@@ -174,8 +174,8 @@ public static class QuestBuild
                     $"{output}\nL'app pesa {mb:F0} MB. Build: {summary.totalTime.TotalMinutes:F1} minuti." +
                     (run
                         ? "\n\nUnity ha provato a installarla sul visore. Se il visore non era collegato e acceso, " +
-                          "non è stata installata: usa tools\\quest\\install_app.bat (controlla anche la Console)."
-                        : "\n\nOra puoi installarla sul visore: tools\\quest\\install_app.bat."),
+                          "non è stata installata: usa EdgeControl.exe, pagina Visore > Installa e avvia (controlla anche la Console)."
+                        : "\n\nOra puoi installarla sul visore: EdgeControl.exe, pagina Visore > Installa e avvia."),
                     "Apri la cartella", "Chiudi"))
                 EditorUtility.RevealInFinder(output);
             return;

@@ -91,10 +91,15 @@ def test_copy_server_rows_keeps_the_session_window(tmp_path):
     assert dest.read_text(encoding="utf-8").splitlines()[1].endswith(",b")
 
 
-def test_session_bat_files_exist():
-    for link in ("usb", "wifi"):
-        bat = (ROOT / "tools" / "quest" / f"session_{link}.bat").read_text(encoding="utf-8")
-        assert f"quest.py session {link}" in bat
+def test_session_command_line_as_edgecontrol_builds_it():
+    # EdgeControl passes the server's options as one "--server-args=..." argument (a value that starts with "--" must be
+    # glued to its option for argparse)
+    args = quest.build_parser().parse_args(["--port", "8000", "session", "usb", "--no-restart",
+                                            "--server-args=--backend mock --mock-delay-s 2"])
+    assert (args.command, args.link, args.no_restart, args.port) == ("session", "usb", True, 8000)
+    assert args.server_args == "--backend mock --mock-delay-s 2"
+    remote = quest.build_parser().parse_args(["session", "wifi", "--ip", "192.168.1.5", "--server", "http://192.168.1.50:8000"])
+    assert (remote.ip, remote.server) == ("192.168.1.5", "http://192.168.1.50:8000")
 
 
 def test_adb_candidates_for_each_system(tmp_path):

@@ -5,8 +5,9 @@ already done are skipped, so on a PC that is ready it only checks and runs the t
     python tools/setup_pc.py --checkpoints-from /media/usb/checkpoints   # weights copied from a disk, not downloaded
     python tools/setup_pc.py --dry-run           # only print what would be done
     python tools/setup_pc.py --export-checkpoints E:/checkpoints         # on a ready PC: weights for an external disk
-Windows: double-click setup_pc.bat. Linux / macOS: ./setup_pc.sh (same options). Any Python 3 can start it: it only
-uses the standard library, and builds the project's own environment (.venv) with Python 3.11.
+Windows: EdgeControl.exe, page Strumenti > Prepara questo PC (or py tools\\setup_pc.py). Linux / macOS: ./setup_pc.sh
+(same options). Any Python 3 can start it: it only uses the standard library, and builds the project's own environment
+(.venv) with Python 3.11.
 
 Steps
  1. Python 3.11 in .venv (open3d 0.18, used by TreeMeshGPT's code, has no wheels for Python 3.12+): made with `uv`
