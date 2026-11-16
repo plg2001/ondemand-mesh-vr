@@ -337,7 +337,7 @@ In tutte e quattro le sessioni l'app è rimasta a 72 fps, a parte il solito calo
   installazione dell'APK, sessione via cavo, server con un modello generativo, log dal vivo, «Prepara il PC», schermi
   con ridimensionamento sopra il 100% e altri PC.
 - **Un altro PC**: `setup_pc` è stato provato solo qui (prova a vuoto, e verifica dei pesi senza rete: 35 s, nessun
-  download, checksum uguali al lock); mai su Linux né su un PC nuovo. La sessione con `--server` è stata provata con
+  download, checksum uguali al lock); mai su un PC nuovo (il PC del laboratorio è Windows, come questo). La sessione con `--server` è stata provata con
   server e client sullo stesso PC (scaricamento di righe e mesh, orologi), non ancora con due PC.
 - Le nuvole sono **pulite** (campionate da mesh esistenti, senza rumore né buchi, normali stimate dal server):
   l'obiettivo reale potrebbe avere scansioni peggiori. È il caso più favorevole ai metodi classici (sezione 4.6).
@@ -361,8 +361,7 @@ In tutte e quattro le sessioni l'app è rimasta a 72 fps, a parte il solito calo
    "replay" che restituisce mesh già generate con ritardi realistici, per le dimostrazioni.
 3. Modello vero con il visore: fatto per la scatola con MeshAnything V2 (sezione 4.4, comando nel README). Restano
    gli altri modelli, la mesh completa di TreeMeshGPT e soprattutto il PC del laboratorio, per i numeri sulla GPU
-   potente con tutti gli oggetti. **Il progetto è pronto per un altro PC** (12 novembre): `setup_pc.sh` /
-   EdgeControl (Strumenti → Prepara / controlla il PC) lo prepara con un comando (README, sezione 0), i pesi possono arrivare da un disco esterno
+   potente con tutti gli oggetti. **Il progetto è pronto per un altro PC** (12 novembre):    EdgeControl (Strumenti → Prepara / controlla il PC) lo prepara con un comando (README, sezione 0), i pesi possono arrivare da un disco esterno
    (`--export-checkpoints` qui, `--checkpoints-from` là) e il visore può stare sul PC del laboratorio oppure su questo
    portatile con il server là (EdgeControl: «server su un altro PC», o `quest.py session wifi --server http://<indirizzo>:8000`;
    README sezione 7). La tabella
@@ -412,7 +411,7 @@ classici come asse della tesi, input realistici (rumore, buchi, scansioni vere),
 - **Portabilità** (12 novembre): niente dipende più da questo PC. Percorsi relativi al progetto, pesi e cache in
   `checkpoints/` alle revisioni di `models/upstream.lock.json` (prima `setup_models.py` scaricava l'ultima versione
   da Hugging Face, mentre i wrapper caricano quella fissata), `adb` cercato su Windows, Linux e macOS, pannello
-  `EdgeControl.exe` (nessuna installazione) e script `.sh` con i fine riga fissati da `.gitattributes`, orari dei log assoluti (`t_epoch`) e fuso del visore
+  `EdgeControl.exe` (nessuna installazione), orari dei log assoluti (`t_epoch`) e fuso del visore
   registrato, così i riassunti escono uguali su qualunque PC.
 - Documentazione e README in italiano, codice e commenti in inglese. Lo studente non conosceva Unity né i visori:
   spiegare i passaggi uno per uno, nominare ogni file e dire sempre cosa è **verificato** e cosa è solo previsto.
@@ -422,7 +421,6 @@ classici come asse della tesi, input realistici (rumore, buchi, scansioni vere),
 ```powershell
 python -m pytest -q tests                      # 82 test, senza pesi né GPU
 EdgeControl.exe                                # TUTTO da una finestra: server, visore, sessioni, risultati, setup
-./setup_pc.sh                                  # prepara o controlla il PC su Linux/macOS (Windows: EdgeControl > Strumenti)
 python tools\setup_pc.py --export-checkpoints E:\checkpoints   # pesi su disco esterno per un altro PC
 python tools\control\build.py                # ricompila EdgeControl.exe dopo una modifica a tools\control\src
 python -m edge.server --mock-delay-s 2         # server mock per le prove nell'editor (da terminale)

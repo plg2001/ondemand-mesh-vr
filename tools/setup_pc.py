@@ -5,8 +5,8 @@ already done are skipped, so on a PC that is ready it only checks and runs the t
     python tools/setup_pc.py --checkpoints-from /media/usb/checkpoints   # weights copied from a disk, not downloaded
     python tools/setup_pc.py --dry-run           # only print what would be done
     python tools/setup_pc.py --export-checkpoints E:/checkpoints         # on a ready PC: weights for an external disk
-Windows: EdgeControl.exe, page Strumenti > Prepara questo PC (or py tools\\setup_pc.py). Linux / macOS: ./setup_pc.sh
-(same options). Any Python 3 can start it: it only uses the standard library, and builds the project's own environment
+Windows: EdgeControl.exe, page Strumenti > Prepara questo PC (or py tools\\setup_pc.py). Linux / macOS: python3
+tools/setup_pc.py (same options). Any Python 3 can start it: it only uses the standard library, and builds the project's own environment
 (.venv) with Python 3.11.
 
 Steps

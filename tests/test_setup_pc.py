@@ -64,10 +64,10 @@ def test_copy_weights_copies_only_what_is_needed(tmp_path, monkeypatch):
     assert setup_pc.copy_weights(src, dst, dry_run=False)[:2] == (0, 2)  # second run: nothing to do
 
 
-def test_launchers_exist_for_every_system():
-    # Windows: one program, EdgeControl.exe (tools/control, tests/test_control_app.py); Linux / macOS: shell scripts
-    assert (ROOT / "EdgeControl.exe").exists() and (ROOT / "setup_pc.sh").exists()
-    for name in ("start_edge_server.sh", "start_model_server.sh"):
-        assert (ROOT / "tools" / "edge" / name).exists(), name
+def test_launchers_are_windows_only():
+    # both PCs of the project (this one and the lab's) are Windows: one program, EdgeControl.exe (tools/control,
+    # tests/test_control_app.py), no shell or batch launchers
+    assert (ROOT / "EdgeControl.exe").exists()
+    assert not list(ROOT.glob("*.sh")) and not list((ROOT / "tools").rglob("*.sh"))
     attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
-    assert "*.sh  text eol=lf" in attributes and "*.exe binary" in attributes
+    assert "*.exe binary" in attributes

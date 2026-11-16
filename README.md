@@ -61,7 +61,6 @@ EdgeControl.exe             pannello di controllo per Windows (doppio clic): ser
                             preparazione del PC, con una console (sezione 8.1); sorgenti in tools/control/
 tools/quest/quest.py        strumenti per il Quest da riga di comando: verifica, installazione, sessioni di misura,
                             server via cavo o Wi-Fi, log (vedi sezione 8); EdgeControl li usa
-tools/edge/*.sh             avvio del server su Linux / macOS (il PC del laboratorio)
 unity/OnDemandMeshVR/       progetto Unity 6.3 (template VR): client che chiede le mesh al server e le mostra
 tests/                      test unitari (pytest)
 third_party/, checkpoints/  codice e pesi upstream (scaricati, non versionati)
@@ -72,16 +71,15 @@ third_party/, checkpoints/  codice e pesi upstream (scaricati, non versionati)
 > `models/` non contiene `__init__.py` di proposito: FastMesh ha un package top-level chiamato `models`,
 > che altrimenti verrebbe oscurato dalla nostra cartella. I nostri moduli stanno in `models/mesh_wrappers/`.
 
-## 0. Su un PC nuovo (Windows, Linux, macOS): un comando
+## 0. Su un PC nuovo (anche quello del laboratorio): un comando
 
-```bash
-git clone https://github.com/plg2001/ondemand-mesh-vr.git && cd ondemand-mesh-vr
-./setup_pc.sh                                   # Linux / macOS
-./setup_pc.sh --checkpoints-from /media/usb/checkpoints   # pesi da un disco esterno invece che da internet
+```powershell
+git clone https://github.com/plg2001/ondemand-mesh-vr.git; cd ondemand-mesh-vr
 ```
 
-Su Windows: doppio clic su **`EdgeControl.exe`**, pagina **Strumenti → Prepara / controlla il PC** (si apre anche
-senza l'ambiente Python; «Pesi da» = `--checkpoints-from`), oppure da terminale `py tools\setup_pc.py`.
+Poi doppio clic su **`EdgeControl.exe`**, pagina **Strumenti → Prepara / controlla il PC** (si apre anche senza
+l'ambiente Python; «Pesi da» = `--checkpoints-from`, per i pesi da un disco esterno), oppure da terminale
+`py tools\setup_pc.py`.
 
 `tools/setup_pc.py` prepara tutto e si può rilanciare (salta quello che è già fatto; su questo PC controlla soltanto):
 ambiente `.venv` con **Python 3.11** (con `uv`, se c'è, che scarica da solo il 3.11; altrimenti `py -3.11` /
@@ -94,13 +92,13 @@ di prova e scena con le nuvole di riferimento per l'accuratezza; test. Opzioni: 
 **Pesi su disco esterno** (11 GB, utile se la rete del laboratorio è lenta o Google Drive blocca TreeMeshGPT): su questo
 PC `python tools/setup_pc.py --export-checkpoints E:/checkpoints` (in EdgeControl: «Esporta i pesi…») copia solo i 6 file dei pesi (10,6 GB, senza i
 doppioni della cache di Hugging Face); sull'altro PC `--checkpoints-from <quella cartella>` li copia e li verifica senza
-scaricare nulla. Su Ubuntu senza Python 3.11: `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt install
-python3.11 python3.11-venv`, oppure installare [uv](https://docs.astral.sh/uv/).
+scaricare nulla. Senza Python 3.11 sul PC: installarlo da python.org, oppure installare
+[uv](https://docs.astral.sh/uv/), che lo scarica da solo.
 
-Tutto il resto è indipendente dal sistema: percorsi relativi alla cartella del progetto, pesi e cache dentro
-`checkpoints/`, orari dei log in secondi dal 1970 (`t_epoch`) e fuso del visore registrato a ogni sessione, `adb`
-cercato nei posti usuali di Windows, Linux e macOS, `EdgeControl.exe` (Windows, nessuna installazione: usa il .NET
-Framework di Windows) e script `.sh` (Linux/macOS) con i fine riga giusti grazie a `.gitattributes`.
+Niente dipende da questo PC: percorsi relativi alla cartella del progetto, pesi e cache dentro `checkpoints/`, orari
+dei log in secondi dal 1970 (`t_epoch`) e fuso del visore registrato a ogni sessione, `adb` cercato nei posti usuali,
+`EdgeControl.exe` che non va installato (usa il .NET Framework di Windows). Gli script Python funzionano anche su
+Linux e macOS, ma i due PC del progetto sono Windows.
 
 ## 1. Ambiente (Windows 11, Python 3.11)
 
@@ -249,27 +247,26 @@ python -m edge.server --backend classical --method ball_pivoting  # gli stessi m
 python -m pytest -q tests
 ```
 
-## 7. Nodo Edge Linux (GPU NVIDIA): il PC del laboratorio
+## 7. Il PC del laboratorio (Windows, GPU NVIDIA)
 
-Sul nodo Linux gira lo stesso codice: si prepara con `./setup_pc.sh` (sezione 0). Su GPU Ampere o successive (sm80+)
-si può aggiungere il kernel FlashAttention vero (`--attn auto` lo usa se c'è, altrimenti lo shim SDPA):
+Sul PC del laboratorio gira lo stesso codice: si prepara come ogni PC nuovo (sezione 0), con EdgeControl. Su Windows
+non c'è il kernel FlashAttention: si usa lo shim SDPA (sezione 1), con gli stessi risultati. La tabella della tesi:
 
-```bash
-.venv/bin/pip install flash-attn --no-build-isolation   # opzionale, solo sm80+ (compilazione lunga)
-.venv/bin/python -m benchmarks.run_benchmarks --modes real --device cuda --precision fp16 --repeats 3 --warmup 1 --quality
+```powershell
+.venv\Scripts\python.exe -m benchmarks.run_benchmarks --modes real --device cuda --precision fp16 --repeats 3 --warmup 1 --quality
 ```
 
-Su Linux il profiler legge anche l'energia: della GPU via NVML (Volta+) e della CPU via RAPL.
+Il profiler legge l'energia della GPU via NVML (se la scheda la fornisce); quella della CPU (RAPL) solo su Linux.
 
 **Con il visore**, due modi:
 
-1. **Visore collegato al PC del laboratorio** (più semplice, niente rete da configurare): lì gli strumenti del Quest
-   funzionano uguali (`adb` con `sudo apt install adb`; se dice *no permissions*, una regola udev per il vendor 2833),
-   per esempio `.venv/bin/python tools/quest/quest.py session usb --server-args "--backend model --model meshanything"`.
-   Serve anche Unity solo se si vuole ricostruire l'app: l'APK già installato sul visore basta.
-2. **Visore collegato a questo portatile, server sul PC del laboratorio**: sul laboratorio
-   `tools/edge/start_edge_server.sh --host 0.0.0.0 --backend model --model meshanything --save-meshes benchmarks/results/edge_meshes`
-   (con `ufw` attivo: `sudo ufw allow 8000/tcp`); sul portatile, in EdgeControl, pagina Server: «Quest via Wi-Fi», spunta
+1. **Visore collegato al PC del laboratorio** (più semplice, niente rete da configurare): lì si usa EdgeControl come
+   qui (pagina Server, «Sessione di misura»). `adb` arriva con Unity (modulo Android Build Support) o con Meta Quest
+   Developer Hub; Unity serve solo per ricostruire l'app: l'APK già installato sul visore basta.
+2. **Visore collegato a questo portatile, server sul PC del laboratorio**: sul laboratorio, in EdgeControl, pagina
+   Server: «Quest via Wi-Fi» (il server risponde alla rete), il modello e, nelle opzioni avanzate, «salva le mesh»,
+   poi «Avvia server»; alla prima volta Windows chiede il permesso del firewall: va consentito sulle reti private.
+   Sul portatile, in EdgeControl, pagina Server: «Quest via Wi-Fi», spunta
    «server su un altro PC» con `http://<indirizzo del laboratorio>:8000` e «Sessione di misura» (da terminale:
    `python tools\quest\quest.py session wifi --server http://<indirizzo del laboratorio>:8000`). La sessione non avvia nessun
    server, misura la differenza tra gli orologi di visore, portatile e server, e alla fine scarica dal server le righe
@@ -289,9 +286,7 @@ Unity (RuntimeMeshLoader) ◄──── mesh .glb ─────────�
 
 **Server**: su Windows si avvia da **`EdgeControl.exe`**, pagina Server (sezione 8.1): chi lo usa (simulatore, Quest
 via Wi-Fi o via cavo), come ricostruisce (finto con 2 s di attesa, modello generativo con il limite di tempo, metodo
-classico) e quali oggetti, poi «Avvia server». Linux/macOS: `tools/edge/start_edge_server.sh` (mock, 2 s; le opzioni
-scritte dopo il nome sostituiscono quelle di default) e `tools/edge/start_model_server.sh <modello> [opzioni]`.
-Da terminale, dalla radice del repository:
+classico) e quali oggetti, poi «Avvia server». Da terminale, dalla radice del repository:
 
 ```powershell
 python -m edge.server                                       # backend mock: inviluppo convesso, niente pesi né GPU
@@ -497,7 +492,7 @@ e ne mostra l'output nella console in basso.
 | `tools\quest\install_app.bat` | Visore: Installa e avvia |
 | `tools\quest\show_logs.bat` | Visore: Log Unity dal vivo |
 | `tools\quest\pull_results.bat` | Visore o Risultati: Copia i CSV |
-| `setup_pc.bat` | Strumenti: Prepara / controlla il PC |
+| `setup_pc.bat` (e `setup_pc.sh`, `tools/edge/*.sh`) | Strumenti: Prepara / controlla il PC (i server: pagina Server) |
 
 Sorgenti in `tools/control/src/*.cs` (C# per il .NET Framework 4.8, Windows Forms). Dopo una modifica
 `python tools/control/build.py` ricompila `EdgeControl.exe` in pochi secondi, con il compilatore C# del .NET SDK o con

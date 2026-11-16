@@ -1,7 +1,3 @@
-# Line endings that must not depend on the PC that checks the repository out:
-# shell scripts run on Linux / macOS (LF), batch files on Windows (CRLF).
-*.sh  text eol=lf
-*.bat text eol=crlf
 # EdgeControl.exe and its icon (tools/control) are built files: never converted, never diffed as text.
 *.exe binary
 *.ico binary
