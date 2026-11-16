@@ -49,15 +49,15 @@
       "point_count": 2048,
       "bytes_xyz_f32": 24576,
       "position": [
-        -1.0,
+        1.9,
         0.247808,
-        2.0
+        1.1
       ],
       "rotation": [
         0.0,
-        0.984808,
+        0.866025,
         0.0,
-        -0.173648
+        -0.5
       ],
       "scale": [
         0.5,
@@ -79,6 +79,43 @@
       "source_mesh_bytes": 1251420
     },
     {
+      "id": "cat_01",
+      "shape": "tmg_cat",
+      "points": "cat_01.xyz",
+      "reference": "cat_01_ref.npy",
+      "point_count": 2048,
+      "bytes_xyz_f32": 24576,
+      "position": [
+        1.9,
+        0.254812,
+        -1.1
+      ],
+      "rotation": [
+        0.0,
+        0.5,
+        0.0,
+        -0.866025
+      ],
+      "scale": [
+        0.6,
+        0.6,
+        0.6
+      ],
+      "local_bounds_min": [
+        -0.428917,
+        -0.424687,
+        -0.5
+      ],
+      "local_bounds_max": [
+        0.428917,
+        0.424687,
+        0.5
+      ],
+      "source_vertices": 35313,
+      "source_triangles": 49936,
+      "source_mesh_bytes": 1022988
+    },
+    {
       "id": "puppet_01",
       "shape": "fastmesh_001",
       "points": "puppet_01.xyz",
@@ -86,15 +123,15 @@
       "point_count": 2048,
       "bytes_xyz_f32": 24576,
       "position": [
-        1.6,
+        0.0,
         0.323826,
-        4.6
+        -2.2
       ],
       "rotation": [
         0.0,
-        1.0,
         0.0,
-        0.0
+        0.0,
+        1.0
       ],
       "scale": [
         0.7,
@@ -123,9 +160,9 @@
       "point_count": 2048,
       "bytes_xyz_f32": 24576,
       "position": [
-        -1.8,
+        -1.9,
         0.25,
-        3.3
+        -1.1
       ],
       "rotation": [
         0.0,
@@ -153,43 +190,6 @@
       "source_mesh_bytes": 92184
     },
     {
-      "id": "cat_01",
-      "shape": "tmg_cat",
-      "points": "cat_01.xyz",
-      "reference": "cat_01_ref.npy",
-      "point_count": 2048,
-      "bytes_xyz_f32": 24576,
-      "position": [
-        1.8,
-        0.254812,
-        3.3
-      ],
-      "rotation": [
-        0.0,
-        0.984808,
-        0.0,
-        0.173648
-      ],
-      "scale": [
-        0.6,
-        0.6,
-        0.6
-      ],
-      "local_bounds_min": [
-        -0.428917,
-        -0.424687,
-        -0.5
-      ],
-      "local_bounds_max": [
-        0.428917,
-        0.424687,
-        0.5
-      ],
-      "source_vertices": 35313,
-      "source_triangles": 49936,
-      "source_mesh_bytes": 1022988
-    },
-    {
       "id": "wand_01",
       "shape": "mav2_wand",
       "points": "wand_01.xyz",
@@ -197,15 +197,15 @@
       "point_count": 2048,
       "bytes_xyz_f32": 24576,
       "position": [
-        -1.4,
+        -1.9,
         0.5,
-        4.4
+        1.1
       ],
       "rotation": [
         0.0,
-        0.707107,
+        0.258819,
         0.0,
-        0.707107
+        0.965926
       ],
       "scale": [
         1.0,

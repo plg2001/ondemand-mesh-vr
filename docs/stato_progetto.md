@@ -195,6 +195,11 @@ Nuova build con le correzioni della sezione 6, punto 2. Due sessioni:
   Dall'altezza degli occhi la scatola è ora il primo oggetto richiesto, sia guardando dritto sia verso il basso (a
   3-17° dal centro della vista; prima veniva sempre la bacchetta, a 5-15°). Le sessioni fino all'11 novembre usano
   la disposizione precedente: i tempi dall'ingresso in vista alla mesh non sono confrontabili oggetto per oggetto.
+- **Scena in cerchio (16 novembre)**: i sei oggetti stanno ora tutti intorno a chi guarda, uno ogni 60° a circa 2,2 m
+  e rivolti verso il centro (prima erano tutti davanti, su un lato della stanza): la scatola resta davanti all'altezza
+  di un tavolo, il pupazzo è alle spalle; girandosi entra in vista un oggetto alla volta. Con l'ordine diverso cambiano
+  anche i punti campionati di gatto, pupazzo e sfera. Serve una nuova build dell'APK; le sessioni fino al 16 novembre
+  usano le disposizioni precedenti.
 
 ### 4.6 Metodi classici contro modelli generativi (13 novembre, solo PC)
 
