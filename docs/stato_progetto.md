@@ -4,7 +4,7 @@ Riassunto per riprendere il lavoro, per te e per chi apre una nuova conversazion
 siamo, cosa è stato misurato, cosa non è stato verificato e cosa resta da fare**. Come è fatto il codice è in
 `CLAUDE.md` (architettura) e `README.md` (uso; il Quest è nella sezione 8).
 
-## 1. Obiettivo (dalle risposte della relatrice, Claudia)
+## 1. Obiettivo 
 
 Ricostruire oggetti 3D **on demand** per visori standalone (Meta Quest 2 / 3S):
 
@@ -16,7 +16,7 @@ Ricostruire oggetti 3D **on demand** per visori standalone (Meta Quest 2 / 3S):
 - i modelli ricostruiscono **l'oggetto intero**, non la parte visibile;
 - gli oggetti fuori vista tornano a essere solo punti.
 
-Termine usato da Claudia: **on demand** (non "streaming").
+Termine usato dalla relatrice: **on demand** (non "streaming").
 
 ## 2. Fase 1: costo dei modelli (fatta)
 
@@ -237,7 +237,7 @@ tutte le forme. BPA e Poisson usano le normali: *vere* (della mesh) o *stimate* 
 - **Cosa ne segue per la tesi**: su nuvole pulite un metodo classico, abbastanza leggero da poter forse girare sul
   visore, batte i generativi in accuratezza e di tre ordini di grandezza in tempo. L'Edge con un modello generativo ha
   senso solo dove il classico non basta: dati rumorosi o incompleti (scansioni vere), oppure se serve una mesh leggera
-  e "pulita" che il classico non dà. Sono queste le domande da proporre a Claudia, insieme alla ricostruzione
+  e "pulita" che il classico non dà. Sono queste le domande da proporre all relatore, insieme alla ricostruzione
   progressiva (risultato classico subito, generativo quando arriva).
 - Il server ha il backend `--backend classical --method ball_pivoting` (anche `hull`, `alpha`, `poisson`,
   `--target-faces`): si può provare nel visore con le stesse etichette di accuratezza. Avvio 2,5 s (carica Open3D),
@@ -389,13 +389,13 @@ In tutte e quattro le sessioni l'app è rimasta a 72 fps, a parte il solito calo
    triangoli a caso sono vicini all'involucro): vanno riportati tutti e due. Il calcolo costa 50-350 ms per mesh.
    Nel simulatore, con l'editor in Play sulla stessa GT 1030, la scatola non finisce in 120 s (504,
    `20261112_113836_wifi`) contro i 66 s col visore: l'Edge deve avere la GPU tutta per sé.
-5. Confronto **Edge contro inferenza sul Quest** (proposta dello studente, ancora senza risposta della relatrice):
+5. Confronto **Edge contro inferenza sul Quest** (proposta dello studente, ancora senza risposta della relatore):
    nel progetto c'è già il pacchetto Unity Inference Engine (`com.unity.ai.inference`).
 6. Robustezza: nuvole con rumore e buchi, scena reale. **Dopo la sezione 4.6 è l'esperimento più importante**:
    decide se i modelli generativi servono a qualcosa rispetto ai metodi classici.
 7. Scrittura della tesi.
 
-**Domande ancora aperte per Claudia**: tempo di attesa accettabile e numero di oggetti per scena; cosa mostrare
+**Domande ancora aperte per il relatore**: tempo di attesa accettabile e numero di oggetti per scena; cosa mostrare
 nell'attesa (finora: i punti); come gestire colori e texture; confronto Edge contro Quest; accesso al PC del
 laboratorio (offerto, "se non si riesce con il tuo"). **Da proporle** (sezione 4.6): il confronto con i metodi
 classici come asse della tesi, input realistici (rumore, buchi, scansioni vere), ricostruzione progressiva.
