@@ -15,7 +15,6 @@ namespace EdgeControl;
 sealed class HeadsetPage : Page
 {
     public override string NavText => "Visore";
-    public override string NavGlyph => Glyph.Headset;
 
     readonly Dictionary<string, Label> values = new Dictionary<string, Label>();
     readonly ToolTip tips = new ToolTip { AutoPopDelay = 15000, InitialDelay = 400 };
@@ -41,21 +40,21 @@ sealed class HeadsetPage : Page
         foreach (var key in new[] { "Collegamento", "Visore", "Batteria", "App", "Server dell'app", "Tunnel USB", "Wi-Fi del visore" })
         {
             var name = Make.Label(key, Theme.Ui, Theme.Muted);
-            name.Margin = new Padding(0, Theme.S(2), Theme.S(14), Theme.S(2));
-            var value = Make.Label("–", key == "Collegamento" ? Theme.Bold : Theme.Ui, Theme.Text, 420);
-            value.Margin = new Padding(0, Theme.S(2), 0, Theme.S(2));
+            name.Margin = new Padding(0, Theme.S(3), Theme.S(18), Theme.S(3));
+            var value = Make.Label("–", key == "Collegamento" ? Theme.Strong : Theme.Ui, Theme.Ink, 420);
+            value.Margin = new Padding(0, Theme.S(3), 0, Theme.S(3));
             values[key] = value;
             grid.Controls.Add(name);
             grid.Controls.Add(value);
         }
-        btnRefresh = new FlatButton("Aggiorna", Look.Secondary, Glyph.Refresh);
-        btnCheck = new FlatButton("Controllo completo", Look.Secondary, Glyph.Check);
+        btnRefresh = new FlatButton("Aggiorna");
+        btnCheck = new FlatButton("Controllo completo");
         btnRefresh.Click += (s, e) => App.Monitors.KickHeadset();
         btnCheck.Click += (s, e) => Quest("Controllo del visore", "check");
         tips.SetToolTip(btnCheck, "quest.py check (era check_headset.bat): autorizzazione, versione di Android, app, indirizzo, tunnel, server.");
-        btnLogs = new FlatButton("Log Unity dal vivo", Look.Secondary, Glyph.Log);
-        btnStopLogs = new FlatButton("Ferma il log", Look.Ghost, Glyph.Stop);
-        btnPull = new FlatButton("Copia i CSV", Look.Secondary, Glyph.Download);
+        btnLogs = new FlatButton("Log Unity dal vivo");
+        btnStopLogs = new FlatButton("Ferma il log");
+        btnPull = new FlatButton("Copia i CSV");
         btnLogs.Click += (s, e) =>
         {
             App.ConsoleOf(ConsoleKind.Logs).Clear();
@@ -68,30 +67,30 @@ sealed class HeadsetPage : Page
         var buttons = Make.Row(btnRefresh, btnCheck, btnLogs, btnStopLogs, btnPull);
         buttons.WrapContents = true;
         buttons.MaximumSize = new Size(Theme.S(520), 0);
-        buttons.Margin = new Padding(0, Theme.S(6), 0, 0);
-        var state = Make.CardOf("Stato", grid, buttons);
+        buttons.Margin = new Padding(0, Theme.S(10), 0, 0);
+        var state = Make.Section("Stato", grid, buttons);
 
         // app
-        lblApk = Make.Label("", Theme.Ui, Theme.Text, 420);
-        lblApkHint = Make.Label("", Theme.Ui, Theme.Amber, 420);
-        btnInstall = new FlatButton("Installa e avvia", Look.Primary, Glyph.Download);
-        btnPickApk = new FlatButton("Altro APK…", Look.Ghost, Glyph.Folder);
-        btnStartApp = new FlatButton("Avvia", Look.Secondary, Glyph.Play);
-        btnRestartApp = new FlatButton("Riavvia", Look.Secondary, Glyph.Refresh);
-        btnStopApp = new FlatButton("Chiudi", Look.Secondary, Glyph.Stop);
+        lblApk = Make.Label("", Theme.Ui, Theme.Ink, 420);
+        lblApkHint = Make.Label("", Theme.Ui, Theme.AmberInk, 420);
+        btnInstall = new FlatButton("Installa e avvia", Look.Start);
+        btnPickApk = new FlatButton("Altro APK…");
+        btnStartApp = new FlatButton("Avvia");
+        btnRestartApp = new FlatButton("Riavvia");
+        btnStopApp = new FlatButton("Chiudi");
         btnInstall.Click += (s, e) => Install();
         btnPickApk.Click += (s, e) => PickApk();
         btnStartApp.Click += (s, e) => AppAction("Avvio dell'app", StartCommand());
         btnRestartApp.Click += (s, e) => AppAction("Riavvio dell'app", $"am force-stop {App.Monitors.Package}", StartCommand());
         btnStopApp.Click += (s, e) => AppAction("Chiusura dell'app", $"am force-stop {App.Monitors.Package}");
         tips.SetToolTip(btnInstall, "quest.py install --run (era install_app.bat): installa l'APK (circa un minuto) e avvia l'app.");
-        var appCard = Make.CardOf("App sul visore", lblApk, lblApkHint, Make.Row(btnInstall, btnPickApk),
+        var appCard = Make.Section("App sul visore", lblApk, lblApkHint, Make.Row(btnInstall, btnPickApk),
             Make.Row(btnStartApp, btnRestartApp, btnStopApp));
 
         // link
-        btnLinkWifi = new FlatButton("Wi-Fi di questo PC", Look.Secondary, Glyph.Wifi);
-        btnLinkUsb = new FlatButton("Cavo USB", Look.Secondary, Glyph.Usb);
-        btnLinkOther = new FlatButton("Imposta", Look.Secondary, Glyph.Link);
+        btnLinkWifi = new FlatButton("Wi-Fi di questo PC");
+        btnLinkUsb = new FlatButton("Cavo USB");
+        btnLinkOther = new FlatButton("Imposta");
         tbOther = Make.Text(190, App.Settings.Get("other_server", ""), "http://192.168.1.50:8000");
         btnLinkWifi.Click += (s, e) => LinkWifi(null);
         btnLinkUsb.Click += (s, e) => Quest("Collegamento via cavo USB", "usb");
@@ -99,16 +98,16 @@ sealed class HeadsetPage : Page
         tips.SetToolTip(btnLinkWifi, "quest.py wifi: scrive sul visore l'indirizzo di questo PC (edge_server.txt) e toglie il tunnel USB.");
         tips.SetToolTip(btnLinkUsb, "quest.py usb: tunnel attraverso il cavo (adb reverse); l'app torna all'indirizzo predefinito 127.0.0.1.");
         tips.SetToolTip(btnLinkOther, "Scrive sul visore l'indirizzo di un server su un altro PC (per esempio quello del laboratorio).");
-        var linkCard = Make.CardOf("Dove l'app cerca il server",
+        var linkCard = Make.Section("Dove l'app cerca il server",
             Make.Row(btnLinkWifi, btnLinkUsb), Make.Row(Make.Inline("Altro PC"), tbOther, btnLinkOther));
+        linkCard.Margin = new Padding(0, Theme.S(8), Theme.S(28), Theme.S(12));
 
         var right = Make.Column((appCard, 0), (linkCard, 0));
         right.AutoSize = true;
         var root = Make.Column(
-            (Header("Visore"), 0),
-            (Make.Columns((state, 54), (right, 46)), 0),
+            (Make.Columns((state, 50), (right, 50)), 0),
             (new Panel { BackColor = Color.Transparent }, 100));
-        Install(root, 940, 400);
+        Install(root, 940, 380);
     }
 
     string StartCommand() => $"monkey -p {App.Monitors.Package} -c android.intent.category.LAUNCHER 1";
@@ -213,14 +212,14 @@ sealed class HeadsetPage : Page
             case "starting": connection = "controllo…"; break;
             default: connection = "adb non risponde"; break;
         }
-        Set("Collegamento", connection, device ? Theme.Green : h.State == "none" || h.State == "starting" ? Theme.Muted : Theme.Amber);
-        Set("Visore", device ? $"{h.Model} · Android {h.Android} (API {h.Api})" : "–");
+        Set("Collegamento", connection, device ? Theme.Go : h.State == "none" || h.State == "starting" ? Theme.Muted : Theme.AmberInk);
+        Set("Visore", device ? $"{h.Model}, Android {h.Android} (API {h.Api})" : "–");
         Set("Batteria", device && h.BatteryLevel.HasValue ? $"{h.BatteryLevel}%" + (h.Charging ? ", in carica" : "") : "–",
-            device && h.BatteryLevel < 20 ? Theme.Red : Theme.Text);
+            device && h.BatteryLevel < 20 ? Theme.Stop : Theme.Ink);
         string appText = "–";
         if (device && h.Installed.HasValue)
             appText = h.Installed == false ? "non installata"
-                : (h.Running == true ? "aperta" : "chiusa") + (h.Updated.HasValue ? $" · installata il {h.Updated:dd/MM HH:mm}" : "");
+                : (h.Running == true ? "aperta" : "chiusa") + (h.Updated.HasValue ? $", installata il {h.Updated:dd/MM HH:mm}" : "");
         Set("App", appText);
         Set("Server dell'app", !device || h.Override == null ? "–" : h.Override.Length > 0 ? h.Override : "http://127.0.0.1:8000");
         Set("Tunnel USB", !device ? "–" : string.IsNullOrEmpty(h.Reverse) ? "spento" : "acceso");
@@ -254,6 +253,6 @@ sealed class HeadsetPage : Page
     {
         var label = values[key];
         if (label.Text != text) label.Text = text;
-        label.ForeColor = color ?? Theme.Text;
+        label.ForeColor = color ?? Theme.Ink;
     }
 }

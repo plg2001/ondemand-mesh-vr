@@ -161,13 +161,13 @@ sealed class ConsoleTab
     {
         bool empty = Box.TextLength == 0;
         Box.Select(Box.TextLength, 0);
-        Box.SelectionFont = Theme.Mono;
+        Box.SelectionFont = color == Theme.ConsoleBright ? Theme.MonoBold : Theme.Mono;  // the titles of the tasks
         Box.SelectionColor = color;
         Box.SelectedText = text;
         if (!empty) return;
         // text streamed into an empty RichEdit takes its default font (a small system font), not the one set above
         Box.SelectAll();
-        Box.SelectionFont = Theme.Mono;
+        Box.SelectionFont = color == Theme.ConsoleBright ? Theme.MonoBold : Theme.Mono;
         Box.Select(Box.TextLength, 0);
     }
 
@@ -200,17 +200,17 @@ sealed class ConsoleTab
     static readonly string[] Good = { "uvicorn running", "success", " passed", "saved in", "installed.", "tunnel on",
                                       "app restarted", "start requested" };
 
+    /// <summary>Task titles bright (and bold), the commands they run dimmed, then green / red / amber for how it went.</summary>
     static Color ColorFor(string line)
     {
-        if (line.StartsWith(Started)) return Color.FromArgb(96, 165, 250);
-        if (line.StartsWith(Command)) return Color.FromArgb(167, 139, 250);
-        if (line.StartsWith(Ok)) return Color.FromArgb(74, 222, 128);
-        if (line.StartsWith(Failed)) return Color.FromArgb(248, 113, 113);
-        if (line.StartsWith(Stopped)) return Color.FromArgb(161, 161, 170);
+        if (line.StartsWith(Started)) return Theme.ConsoleBright;
+        if (line.StartsWith(Command) || line.StartsWith(Stopped)) return Theme.ConsoleDim;
+        if (line.StartsWith(Ok)) return Theme.ConsoleGood;
+        if (line.StartsWith(Failed)) return Theme.ConsoleBad;
         var lower = line.ToLowerInvariant();
-        foreach (var w in Bad) if (lower.Contains(w)) return Color.FromArgb(252, 129, 129);
-        foreach (var w in Warn) if (lower.Contains(w)) return Color.FromArgb(250, 204, 21);
-        foreach (var w in Good) if (lower.Contains(w)) return Color.FromArgb(134, 239, 172);
+        foreach (var w in Bad) if (lower.Contains(w)) return Theme.ConsoleBad;
+        foreach (var w in Warn) if (lower.Contains(w)) return Theme.ConsoleWarn;
+        foreach (var w in Good) if (lower.Contains(w)) return Theme.ConsoleGood;
         return Theme.ConsoleText;
     }
 }

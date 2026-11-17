@@ -11,7 +11,6 @@ namespace EdgeControl;
 sealed class ToolsPage : Page
 {
     public override string NavText => "Strumenti";
-    public override string NavGlyph => Glyph.Tools;
 
     CheckBox chkNoWeights, chkNoTests, chkForceData, chkDryRun;
     TextBox tbFrom;
@@ -45,25 +44,28 @@ sealed class ToolsPage : Page
         tips.SetToolTip(chkForceData, "--force-data: rigenera le nuvole di prova e la scena anche se ci sono già.");
         tips.SetToolTip(chkDryRun, "--dry-run: mostra soltanto cosa farebbe.");
         tbFrom = Make.Text(250, "", @"es. E:\checkpoints (vuoto = da internet)");
-        var browse = new FlatButton("Sfoglia…", Look.Ghost, Glyph.Folder);
+        var browse = new FlatButton("Sfoglia…");
+        browse.Margin = new Padding(0, 0, 0, Theme.S(6));
         browse.Click += (s, e) =>
         {
             var dir = PickFolder("Cartella con la copia dei pesi (fatta con «Esporta i pesi»)");
             if (dir != null) tbFrom.Text = dir;
         };
-        btnSetup = new FlatButton("Prepara / controlla il PC", Look.Primary, Glyph.Repair);
-        btnExport = new FlatButton("Esporta i pesi…", Look.Secondary, Glyph.Upload);
+        btnSetup = new FlatButton("Prepara / controlla il PC", Look.Start);
+        btnExport = new FlatButton("Esporta i pesi…");
         btnSetup.Click += (s, e) => Setup();
         btnExport.Click += (s, e) => Export();
         tips.SetToolTip(btnSetup, "tools\\setup_pc.py (era setup_pc.bat).");
         tips.SetToolTip(btnExport, "Copia i 6 file dei pesi (10,6 GB) in una cartella, per esempio un disco esterno: sull'altro PC «Pesi da» quella cartella.");
-        var setupCard = Make.CardOf("Prepara questo PC",
+        var actions = Make.Row(btnSetup, btnExport);
+        actions.Margin = new Padding(0, Theme.S(8), 0, 0);
+        var setupCard = Make.Section("Prepara questo PC",
             Make.Row(chkNoWeights, chkNoTests, chkForceData, chkDryRun),
             Make.Row(Make.Inline("Pesi da"), tbFrom, browse),
-            Make.Row(btnSetup, btnExport));
+            actions);
 
         // other commands
-        commands = new SmoothListView { Height = Theme.S(172), Width = Theme.S(440), BorderStyle = BorderStyle.FixedSingle, ShowItemToolTips = true };
+        commands = new SmoothListView { ShowItemToolTips = true };
         commands.Columns.Add("Comando", Theme.S(190));
         commands.Columns.Add("A cosa serve", Theme.S(228));
         foreach (var c in Commands)
@@ -73,36 +75,33 @@ sealed class ToolsPage : Page
             });
         commands.Items[0].Selected = true;
         commands.DoubleClick += (s, e) => RunSelected();
-        btnRun = new FlatButton("Esegui", Look.Primary, Glyph.Play);
+        btnRun = new FlatButton("Esegui", Look.Start);
+        btnRun.Margin = new Padding(0, Theme.S(8), 0, 0);
         btnRun.Click += (s, e) => RunSelected();
-        var commandsCard = Make.CardOf("Altri comandi del progetto", commands,
-            btnRun);
+        var commandsCard = Make.Section("Altri comandi del progetto", Make.Framed(commands, new Size(Theme.S(440), Theme.S(166))), btnRun);
 
         // shortcuts
-        var open = Make.Row(
-            Make.Inline("Apri:", Theme.Muted),
-            Shortcut("Cartella del progetto", Glyph.Folder, () => Shell.Open(App.Repo.Root)),
-            Shortcut("README", Glyph.Document, () => Shell.Open(App.Repo.At("README.md"))),
-            Shortcut("Stato del progetto", Glyph.Document, () => Shell.Open(App.Repo.At("docs", "stato_progetto.md"))),
-            Shortcut("API del server", Glyph.Web, () => Shell.Open(App.Monitors.BaseUrl + "/docs")),
-            Shortcut("Log del server", Glyph.Log, OpenServerLog),
-            Shortcut("Progetto Unity", Glyph.Headset, OpenUnity));
-        open.WrapContents = true;
-        open.Margin = new Padding(0, 0, 0, Theme.S(4));
+        var open = Make.Section("Scorciatoie", Make.Row(
+            Shortcut("Cartella del progetto", () => Shell.Open(App.Repo.Root)),
+            Shortcut("README", () => Shell.Open(App.Repo.At("README.md"))),
+            Shortcut("Stato del progetto", () => Shell.Open(App.Repo.At("docs", "stato_progetto.md"))),
+            Shortcut("API del server", () => Shell.Open(App.Monitors.BaseUrl + "/docs")),
+            Shortcut("Log del server", OpenServerLog),
+            Shortcut("Progetto Unity", OpenUnity)));
+        open.Margin = new Padding(0, Theme.S(6), 0, 0);
 
         var root = Make.Column(
-            (Header("Strumenti"), 0),
-            (open, 0),
             (Make.Columns((setupCard, 52), (commandsCard, 48)), 0),
+            (open, 0),
             (new Panel { BackColor = Color.Transparent }, 100));
-        Install(root, 940, 380);
+        Install(root, 940, 360);
     }
 
-    static FlatButton Shortcut(string text, string glyph, Action action)
+    static FlatButton Shortcut(string text, Action action)
     {
-        var button = new FlatButton(text, Look.Secondary, glyph);
-        button.Click += (s, e) => action();
-        return button;
+        var link = new FlatButton(text, Look.Link);
+        link.Click += (s, e) => action();
+        return link;
     }
 
     string PickFolder(string description)

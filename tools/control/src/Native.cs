@@ -154,6 +154,25 @@ static class Native
     [DllImport("user32.dll")]
     public static extern bool IsIconic(IntPtr hWnd);
 
+    [DllImport("user32.dll")]
+    static extern bool SystemParametersInfo(uint action, uint param, ref bool value, uint winIni);
+
+    const uint SPI_GETCLIENTAREAANIMATION = 0x1042;
+
+    /// <summary>Windows' "Animation effects" (Settings > Accessibility > Visual effects): when off, nothing blinks.</summary>
+    public static bool AnimationsEnabled()
+    {
+        bool on = true;
+        try
+        {
+            return !SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, ref on, 0) || on;
+        }
+        catch (Exception)
+        {
+            return true;
+        }
+    }
+
     public const int WM_SETREDRAW = 0x000B;
     public const int WM_VSCROLL = 0x0115;
     public const int SB_BOTTOM = 7;

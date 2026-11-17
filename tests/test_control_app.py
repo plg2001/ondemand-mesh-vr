@@ -37,7 +37,7 @@ def test_every_option_the_panel_passes_exists():
     used = set()
     for path in SOURCES:  # string literals that start with an option: "--backend", "--server-args=" + ...
         used |= set(re.findall(r'"(--[a-z][a-z0-9-]*)(?=[="])', path.read_text(encoding="utf-8")))
-    own = {"--snapshot", "--query-gpu", "--format"}  # EdgeControl's own option, nvidia-smi's
+    own = {"--snapshot", "--icon", "--query-gpu", "--format"}  # EdgeControl's own options, nvidia-smi's
     assert used - own, "no option found in the sources: the pattern above is out of date"
     assert not used - own - known, f"options that no script accepts: {sorted(used - own - known)}"
 

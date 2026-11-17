@@ -335,7 +335,9 @@ In tutte e quattro le sessioni l'app è rimasta a 72 fps, a parte il solito calo
   liberati), sessione Wi-Fi senza riavvio dell'app fino a «Termina e salva» e al riassunto, controllo del visore, comando
   scritto nella console, chiusura con il server acceso (conferma, server fermato). **Non provati dall'app**:
   installazione dell'APK, sessione via cavo, server con un modello generativo, log dal vivo, «Prepara il PC», schermi
-  con ridimensionamento sopra il 100% e altri PC.
+  con ridimensionamento sopra il 100% e altri PC. Il 17 novembre ne è stato rifatto l'aspetto (stato a sinistra al posto
+  dei riquadri in alto, niente icone, verde = avvia, rosso = ferma): controllato solo con le istantanee
+  (`--snapshot`), anche con un server finto acceso e due richieste; i flussi non sono stati riprovati dall'app.
 - **Un altro PC**: `setup_pc` è stato provato solo qui (prova a vuoto, e verifica dei pesi senza rete: 35 s, nessun
   download, checksum uguali al lock); mai su un PC nuovo (il PC del laboratorio è Windows, come questo). La sessione con `--server` è stata provata con
   server e client sullo stesso PC (scaricamento di righe e mesh, orologi), non ancora con due PC.

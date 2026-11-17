@@ -35,7 +35,12 @@ static class Program
 
         string snapshot = null;
         for (int i = 0; i + 1 < args.Length; i++)
+        {
             if (args[i] == "--snapshot") snapshot = args[i + 1];
+            if (args[i] != "--icon") continue;
+            Logo.WriteIcon(args[i + 1]);  // development aid: tools\control\EdgeControl.ico is drawn by Logo.Draw
+            return 0;
+        }
 
         var repo = Repo.Find(AppDomain.CurrentDomain.BaseDirectory) ?? Repo.Find(Environment.CurrentDirectory);
         if (repo == null)

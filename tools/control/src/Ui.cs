@@ -1,9 +1,19 @@
-// Look of the panel: colours, fonts, scaling with the screen's DPI and the few hand-drawn controls (buttons,
-// navigation, cards, status cards).
+// Look of the panel: colours, fonts, scaling with the screen's DPI and the few hand-drawn controls (the rail of pages
+// with their lamps, buttons, console tabs, sections, the mark).
+//
+// The panel is meant to read like the control cabinet of a lab bench, not like a web page: light grey (close to RAL 7035,
+// the grey of electrical cabinets) for the fixed parts, white for the page in use, graphite ink, DIN lettering
+// (Bahnschrift, in every Windows 10/11) for names and Segoe UI for the forms. Colour is only used for meaning, with the
+// lamp colours of IEC 60073: green = running / starts something, red = fault / stops something, amber = in between (it
+// blinks while something starts), white = information, grey = off. No icons and no boxes around everything: buttons say
+// what they do, sections are a title and their controls.
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Drawing.Text;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 
@@ -16,47 +26,65 @@ static class Theme
     public static Padding P(int all) => new Padding(S(all));
     public static Padding P(int left, int top, int right, int bottom) => new Padding(S(left), S(top), S(right), S(bottom));
 
-    public static readonly Color Bg = Color.FromArgb(241, 243, 246);
-    public static readonly Color Card = Color.White;
-    public static readonly Color Border = Color.FromArgb(220, 224, 230);
-    public static readonly Color Text = Color.FromArgb(17, 24, 39);
-    public static readonly Color Muted = Color.FromArgb(100, 108, 122);
-    public static readonly Color Accent = Color.FromArgb(37, 99, 235);
-    public static readonly Color AccentDark = Color.FromArgb(29, 78, 216);
-    public static readonly Color Green = Color.FromArgb(22, 163, 74);
-    public static readonly Color Amber = Color.FromArgb(217, 119, 6);
-    public static readonly Color Red = Color.FromArgb(220, 38, 38);
-    public static readonly Color RedDark = Color.FromArgb(185, 28, 28);
-    public static readonly Color Gray = Color.FromArgb(160, 166, 176);
-    public static readonly Color Nav = Color.FromArgb(30, 41, 59);
-    public static readonly Color NavHover = Color.FromArgb(44, 57, 78);
-    public static readonly Color NavSelected = Color.FromArgb(51, 65, 85);
-    public static readonly Color ConsoleBg = Color.FromArgb(24, 24, 27);
-    public static readonly Color ConsoleBar = Color.FromArgb(39, 39, 42);
-    public static readonly Color ConsoleText = Color.FromArgb(212, 212, 216);
+    // surfaces
+    public static readonly Color Cabinet = Color.FromArgb(220, 222, 217);       // rail, action strip
+    public static readonly Color CabinetLight = Color.FromArgb(230, 232, 227);  // rail entry under the mouse
+    public static readonly Color Sheet = Color.White;                           // the page in use
+    public static readonly Color Rule = Color.FromArgb(178, 182, 176);          // edges on the cabinet grey
+    public static readonly Color RuleSoft = Color.FromArgb(206, 210, 204);      // edges on the white sheet
 
-    public static Font Ui, Bold, Small, SmallBold, Title, Subtitle, Mono, Icon, IconBig;
-    public static bool HasIcons;
+    // ink
+    public static readonly Color Ink = Color.FromArgb(39, 44, 46);
+    public static readonly Color Muted = Color.FromArgb(90, 97, 96);
+    public static readonly Color Faint = Color.FromArgb(150, 156, 150);         // disabled
+
+    // paint of the buttons (white text on them) and text that carries a state
+    public static readonly Color Go = Color.FromArgb(30, 122, 70);
+    public static readonly Color Stop = Color.FromArgb(180, 35, 24);
+    public static readonly Color AmberInk = Color.FromArgb(138, 90, 0);
+
+    // lamps: brighter, they are lights
+    public static readonly Color LampGo = Color.FromArgb(46, 181, 93);
+    public static readonly Color LampStop = Color.FromArgb(224, 53, 43);
+    public static readonly Color LampAmber = Color.FromArgb(240, 168, 24);
+    public static readonly Color LampInfo = Color.FromArgb(240, 242, 237);
+
+    // console
+    public static readonly Color ConsoleBg = Color.FromArgb(42, 46, 48);
+    public static readonly Color ConsoleBar = Color.FromArgb(31, 35, 37);
+    public static readonly Color ConsoleText = Color.FromArgb(205, 209, 203);
+    public static readonly Color ConsoleBright = Color.FromArgb(244, 245, 241);
+    public static readonly Color ConsoleDim = Color.FromArgb(140, 147, 142);
+    public static readonly Color ConsoleGood = Color.FromArgb(132, 200, 150);
+    public static readonly Color ConsoleBad = Color.FromArgb(238, 139, 127);
+    public static readonly Color ConsoleWarn = Color.FromArgb(227, 192, 101);
+
+    public static Font Ui, Strong, Small, Heading, Name, Mono, MonoBold;
+
+    /// <summary>Lamps may blink: Windows' "Animation effects" are on.</summary>
+    public static bool Blinks = true;
 
     public static void Init(float dpi)
     {
         Scale = Math.Max(1f, dpi / 96f);
-        Ui = new Font("Segoe UI", 9.75f);
-        Bold = new Font("Segoe UI", 9.75f, FontStyle.Bold);
-        Small = new Font("Segoe UI", 8.5f);
-        SmallBold = new Font("Segoe UI", 8.25f, FontStyle.Bold);
-        Title = new Font("Segoe UI", 13.5f, FontStyle.Bold);
-        Subtitle = new Font("Segoe UI", 11f, FontStyle.Bold);
-        Mono = new Font(new InstalledFontCollection().Families.Any(f => f.Name == "Cascadia Mono") ? "Cascadia Mono" : "Consolas", 9.5f);
-        HasIcons = new InstalledFontCollection().Families.Any(f => f.Name == "Segoe MDL2 Assets");
-        Icon = new Font(HasIcons ? "Segoe MDL2 Assets" : "Segoe UI Symbol", 10.5f);
-        IconBig = new Font(HasIcons ? "Segoe MDL2 Assets" : "Segoe UI Symbol", 13f);
+        HashSet<string> families;
+        using (var installed = new InstalledFontCollection())
+            families = new HashSet<string>(installed.Families.Select(f => f.Name));
+        bool din = families.Contains("Bahnschrift SemiBold"), semibold = families.Contains("Segoe UI Semibold");
+        Ui = new Font("Segoe UI", 9f);
+        Strong = semibold ? new Font("Segoe UI Semibold", 9f) : new Font("Segoe UI", 9f, FontStyle.Bold);
+        Small = new Font("Segoe UI", 8.25f);
+        Heading = din ? new Font("Bahnschrift SemiBold", 10.5f) : new Font("Segoe UI", 10f, FontStyle.Bold);
+        Name = din ? new Font("Bahnschrift SemiBold", 11.5f) : new Font("Segoe UI", 11f, FontStyle.Bold);
+        Mono = new Font(families.Contains("Cascadia Mono") ? "Cascadia Mono" : "Consolas", 9f);
+        MonoBold = new Font(Mono, FontStyle.Bold);
+        Blinks = Native.AnimationsEnabled();
     }
 
-    public static GraphicsPath Round(Rectangle r, int radius)
+    public static GraphicsPath Round(RectangleF r, float radius)
     {
         var path = new GraphicsPath();
-        int d = Math.Min(radius * 2, Math.Min(r.Width, r.Height));
+        float d = Math.Min(radius * 2, Math.Min(r.Width, r.Height));
         if (d <= 1)
         {
             path.AddRectangle(r);
@@ -74,66 +102,74 @@ static class Theme
     {
         for (var p = c.Parent; p != null; p = p.Parent)
             if (p.BackColor.A == 255) return p.BackColor;
-        return Bg;
+        return Sheet;
+    }
+
+    /// <summary>Height of a line of text in a font.</summary>
+    public static int LineHeight(Font font) => TextRenderer.MeasureText("Ag", font, Size.Empty, TextFormatFlags.NoPadding).Height;
+}
+
+/// <summary>An indicator lamp: a disc in its colour with a darker rim, or grey when off (Color.Empty).</summary>
+static class Lamp
+{
+    public static void Draw(Graphics g, Rectangle r, Color color)
+    {
+        bool lit = color != Color.Empty;
+        var fill = lit ? color : Color.FromArgb(176, 180, 174);
+        var rim = lit ? Color.FromArgb((int)(color.R * 0.7), (int)(color.G * 0.7), (int)(color.B * 0.7)) : Color.FromArgb(138, 143, 137);
+        var mode = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using (var brush = new SolidBrush(fill)) g.FillEllipse(brush, r);
+        using (var pen = new Pen(rim, Math.Max(1f, Theme.Scale))) g.DrawEllipse(pen, r.X + 0.5f, r.Y + 0.5f, r.Width - 1, r.Height - 1);
+        g.SmoothingMode = mode;
     }
 }
 
-/// <summary>Icons of the Segoe MDL2 Assets font (Windows 10/11).</summary>
-static class Glyph
-{
-    public const string Server = "", Headset = "", Results = "", Tools = "", Play = "",
-                        Stop = "", Record = "", Refresh = "", Folder = "", Copy = "",
-                        Save = "", Delete = "", Download = "", Wifi = "", Usb = "",
-                        Web = "", Document = "", Terminal = "", Check = "", Send = "",
-                        Power = "", Repair = "", Link = "", Upload = "", Log = "",
-                        Settings = "";
-}
+/// <summary>Start = green, it starts something (a server, a session, a script); Stop = red, it stops it; Plain = the rest;
+/// Link = underlined text, it opens something.</summary>
+enum Look { Start, Stop, Plain, Link }
 
-enum Look { Primary, Secondary, Danger, Ghost }
-
-/// <summary>A flat button with rounded corners and an optional icon.</summary>
+/// <summary>A button that says what it does, painted in the colour of what it does.</summary>
 class FlatButton : Button
 {
     Look look;
-    string glyph;
     bool hover, pressed;
+    Font underlined;
 
-    public FlatButton(string text, Look look = Look.Secondary, string glyph = null)
+    public FlatButton(string text, Look look = Look.Plain)
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint |
                  ControlStyles.ResizeRedraw, true);
         this.look = look;
-        this.glyph = glyph;
         FlatStyle = FlatStyle.Flat;
         FlatAppearance.BorderSize = 0;
-        Font = look == Look.Primary || look == Look.Danger ? Theme.Bold : Theme.Ui;
+        Font = FontOf(look);
         Cursor = Cursors.Hand;
-        Margin = new Padding(0, 0, Theme.S(8), Theme.S(6));
+        Margin = new Padding(0, 0, Theme.S(look == Look.Link ? 14 : 6), Theme.S(6));
         Text = text;
         AccessibleName = text;
         Size = GetPreferredSize(Size.Empty);
     }
 
+    static Font FontOf(Look look) => look == Look.Start || look == Look.Stop ? Theme.Strong : Theme.Ui;
+
     public Look Look
     {
         get => look;
-        set { look = value; Font = look == Look.Primary || look == Look.Danger ? Theme.Bold : Theme.Ui; Invalidate(); }
+        set
+        {
+            look = value;
+            Font = FontOf(look);
+            underlined = null;
+            Size = GetPreferredSize(Size.Empty);
+            Invalidate();
+        }
     }
-
-    public string Icon
-    {
-        get => glyph;
-        set { glyph = value; Size = GetPreferredSize(Size.Empty); Invalidate(); }
-    }
-
-    bool ShowsGlyph => !string.IsNullOrEmpty(glyph) && Theme.HasIcons;
 
     public override Size GetPreferredSize(Size proposed)
     {
         var text = TextRenderer.MeasureText(Text, Font, Size.Empty, TextFormatFlags.NoPadding);
-        int width = text.Width + Theme.S(look == Look.Ghost ? 12 : 26);
-        if (ShowsGlyph) width += TextRenderer.MeasureText(glyph, Theme.Icon, Size.Empty, TextFormatFlags.NoPadding).Width + Theme.S(7);
-        return new Size(width, Math.Max(Theme.S(32), text.Height + Theme.S(14)));
+        return new Size(text.Width + Theme.S(look == Look.Link ? 2 : 26), Math.Max(Theme.S(28), text.Height + Theme.S(10)));
     }
 
     protected override void OnTextChanged(EventArgs e)
@@ -155,38 +191,43 @@ class FlatButton : Button
         var g = e.Graphics;
         var parent = Theme.BackOf(this);
         g.Clear(parent);
+        var flags = TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter |
+                    TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
+        if (look == Look.Link)
+        {
+            underlined ??= new Font(Font, FontStyle.Underline);
+            var ink = !Enabled ? Theme.Faint : hover || pressed ? Color.Black : Theme.Ink;
+            TextRenderer.DrawText(g, Text, Enabled ? underlined : Font, ClientRectangle, ink, parent, flags);
+            if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(g, ClientRectangle, ink, parent);
+            return;
+        }
         Color back, fore, border;
         switch (look)
         {
-            case Look.Primary:
-                back = pressed ? Theme.AccentDark : hover ? Color.FromArgb(29, 88, 225) : Theme.Accent;
+            case Look.Start:
+                back = pressed ? Color.FromArgb(18, 90, 50) : hover ? Color.FromArgb(24, 106, 60) : Theme.Go;
                 fore = Color.White;
                 border = back;
                 break;
-            case Look.Danger:
-                back = pressed ? Color.FromArgb(153, 27, 27) : hover ? Theme.RedDark : Theme.Red;
+            case Look.Stop:
+                back = pressed ? Color.FromArgb(132, 24, 16) : hover ? Color.FromArgb(156, 29, 20) : Theme.Stop;
                 fore = Color.White;
-                border = back;
-                break;
-            case Look.Ghost:
-                back = pressed ? Color.FromArgb(215, 222, 232) : hover ? Color.FromArgb(229, 233, 240) : parent;
-                fore = Theme.Accent;
                 border = back;
                 break;
             default:
-                back = pressed ? Color.FromArgb(229, 231, 235) : hover ? Color.FromArgb(243, 244, 246) : Color.White;
-                fore = Theme.Text;
-                border = Color.FromArgb(203, 208, 216);
+                back = pressed ? Color.FromArgb(226, 228, 223) : hover ? Color.FromArgb(242, 243, 240) : Color.White;
+                fore = Theme.Ink;
+                border = hover ? Color.FromArgb(140, 146, 139) : Color.FromArgb(167, 172, 166);
                 break;
         }
         if (!Enabled)
         {
-            back = look == Look.Ghost ? parent : Color.FromArgb(232, 234, 238);
-            fore = Theme.Gray;
-            border = look == Look.Ghost ? parent : Color.FromArgb(225, 228, 233);
+            back = Color.FromArgb(232, 234, 230);
+            fore = Theme.Faint;
+            border = Color.FromArgb(214, 217, 212);
         }
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        using (var path = Theme.Round(new Rectangle(0, 0, Width - 1, Height - 1), Theme.S(6)))
+        using (var path = Theme.Round(new RectangleF(0.5f, 0.5f, Width - 1, Height - 1), Theme.S(2)))
         using (var brush = new SolidBrush(back))
         using (var pen = new Pen(border))
         {
@@ -194,50 +235,42 @@ class FlatButton : Button
             g.DrawPath(pen, path);
         }
         g.SmoothingMode = SmoothingMode.Default;
-        var flags = TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.SingleLine;
-        var textSize = TextRenderer.MeasureText(g, Text, Font, Size.Empty, flags);
-        int glyphWidth = 0;
-        Size glyphSize = Size.Empty;
-        if (ShowsGlyph)
-        {
-            glyphSize = TextRenderer.MeasureText(g, glyph, Theme.Icon, Size.Empty, flags);
-            glyphWidth = glyphSize.Width + Theme.S(7);
-        }
-        int x = Math.Max(Theme.S(4), (Width - glyphWidth - textSize.Width) / 2);
-        if (ShowsGlyph)
-            TextRenderer.DrawText(g, glyph, Theme.Icon, new Rectangle(x, 1, glyphSize.Width + 2, Height), fore, back, flags);
-        TextRenderer.DrawText(g, Text, Font, new Rectangle(x + glyphWidth, 0, Width - x - glyphWidth, Height), fore, back,
-                              flags | TextFormatFlags.EndEllipsis);
+        TextRenderer.DrawText(g, Text, Font, new Rectangle(Theme.S(5), 0, Width - Theme.S(10), Height), fore, back, flags);
         if (Focused && ShowFocusCues)
-            ControlPaint.DrawFocusRectangle(g, Rectangle.Inflate(ClientRectangle, -Theme.S(3), -Theme.S(3)));
+            ControlPaint.DrawFocusRectangle(g, Rectangle.Inflate(ClientRectangle, -Theme.S(3), -Theme.S(3)), fore, back);
     }
 }
 
-/// <summary>An entry of the navigation bar on the left.</summary>
-sealed class NavButton : Button
+/// <summary>"▸ Opzioni avanzate": shows or hides a part of the page.</summary>
+sealed class Disclosure : Button
 {
-    readonly string glyph;
-    bool hover, selected;
+    bool open, hover;
 
-    public NavButton(string text, string glyph)
+    public Disclosure(string text)
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint |
                  ControlStyles.ResizeRedraw, true);
-        this.glyph = glyph;
-        Text = text;
-        AccessibleName = text;
         FlatStyle = FlatStyle.Flat;
         FlatAppearance.BorderSize = 0;
         Font = Theme.Ui;
         Cursor = Cursors.Hand;
-        Margin = Padding.Empty;
-        Height = Theme.S(46);
+        Text = text;
+        AccessibleName = text;
+        AccessibleRole = AccessibleRole.CheckButton;
+        Margin = new Padding(0, 0, Theme.S(14), 0);
+        var size = TextRenderer.MeasureText(text, Font, Size.Empty, TextFormatFlags.NoPadding);
+        Size = new Size(size.Width + Theme.S(18), Math.Max(Theme.S(26), size.Height + Theme.S(8)));
     }
 
-    public bool Selected
+    public bool Open
     {
-        get => selected;
-        set { selected = value; Invalidate(); }
+        get => open;
+        set
+        {
+            open = value;
+            AccessibleDescription = open ? "aperte" : "chiuse";
+            Invalidate();
+        }
     }
 
     protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
@@ -246,23 +279,113 @@ sealed class NavButton : Button
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
-        var back = selected ? Theme.NavSelected : hover ? Theme.NavHover : Theme.Nav;
+        var back = Theme.BackOf(this);
         g.Clear(back);
-        if (selected)
-            using (var accent = new SolidBrush(Color.FromArgb(96, 165, 250)))
-                g.FillRectangle(accent, 0, Theme.S(8), Theme.S(4), Height - Theme.S(16));
-        var fore = selected ? Color.White : Color.FromArgb(203, 213, 225);
-        var flags = TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.SingleLine;
-        if (Theme.HasIcons)
-            TextRenderer.DrawText(g, glyph, Theme.IconBig, new Rectangle(Theme.S(20), 1, Theme.S(28), Height), fore, back, flags);
-        TextRenderer.DrawText(g, Text, selected ? Theme.Bold : Theme.Ui,
-                              new Rectangle(Theme.S(Theme.HasIcons ? 54 : 20), 0, Width, Height), fore, back, flags);
-        if (Focused && ShowFocusCues)
-            ControlPaint.DrawFocusRectangle(g, Rectangle.Inflate(ClientRectangle, -Theme.S(2), -Theme.S(2)));
+        var ink = hover ? Color.Black : Theme.Ink;
+        float cy = Height / 2f, x = Theme.S(1), a = Theme.S(4);
+        var triangle = open
+            ? new[] { new PointF(x, cy - a * 0.55f), new PointF(x + 2 * a, cy - a * 0.55f), new PointF(x + a, cy + a * 0.65f) }
+            : new[] { new PointF(x + a * 0.4f, cy - a), new PointF(x + a * 0.4f, cy + a), new PointF(x + a * 1.5f, cy) };
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using (var brush = new SolidBrush(ink)) g.FillPolygon(brush, triangle);
+        g.SmoothingMode = SmoothingMode.Default;
+        TextRenderer.DrawText(g, Text, Font, new Rectangle(Theme.S(14), 0, Width - Theme.S(14), Height), ink, back,
+                              TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.SingleLine);
+        if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(g, ClientRectangle, ink, back);
     }
 }
 
-/// <summary>A tab of the console bar.</summary>
+/// <summary>A page in the rail on the left: its name, its lamp and a few lines of live state. The selected one is white
+/// and joins the page, like the tab of a binder.</summary>
+sealed class RailEntry : Button
+{
+    readonly bool hasLamp;
+    string[] lines = new string[0];
+    Color lamp = Color.Empty;
+    bool blinking, hover, selected;
+
+    /// <summary>The lit half of the blinking cycle (flipped by the window's timer).</summary>
+    public static bool BlinkLit = true;
+
+    public RailEntry(string name, int lineCount, bool hasLamp)
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint |
+                 ControlStyles.ResizeRedraw, true);
+        this.hasLamp = hasLamp;
+        Text = name;
+        AccessibleName = name;
+        FlatStyle = FlatStyle.Flat;
+        FlatAppearance.BorderSize = 0;
+        Cursor = Cursors.Hand;
+        Margin = Padding.Empty;
+        Height = Theme.S(11) + Theme.LineHeight(Theme.Name) + Theme.S(3) + lineCount * StateLine + Theme.S(12);
+    }
+
+    static int StateLine => Theme.LineHeight(Theme.Small) + Theme.S(1);
+
+    public bool Selected
+    {
+        get => selected;
+        set
+        {
+            if (selected == value) return;
+            selected = value;
+            Invalidate();
+        }
+    }
+
+    public bool Blinking => blinking;
+
+    /// <summary>All the state lines, for the tooltip.</summary>
+    public string StateText => string.Join("\n", lines);
+
+    /// <summary>The lamp (Color.Empty = off), whether it blinks, the state lines (empty ones are left out); false if
+    /// nothing changed.</summary>
+    public bool Set(Color lampColor, bool blink, params string[] state)
+    {
+        var shown = state.Where(s => !string.IsNullOrEmpty(s)).ToArray();
+        if (lampColor == lamp && blink == blinking && shown.SequenceEqual(lines)) return false;
+        lamp = lampColor;
+        blinking = blink;
+        lines = shown;
+        AccessibleDescription = string.Join(", ", lines);
+        Invalidate();
+        return true;
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        var back = selected ? Theme.Sheet : hover ? Theme.CabinetLight : Theme.Cabinet;
+        g.Clear(back);
+        if (!selected)
+            using (var pen = new Pen(Theme.Rule))
+                g.DrawLine(pen, Width - 1, 0, Width - 1, Height);
+        int x = Theme.S(33), y = Theme.S(11), nameHeight = Theme.LineHeight(Theme.Name), line = StateLine;
+        if (hasLamp)
+        {
+            int d = Theme.S(10);
+            Lamp.Draw(g, new Rectangle(Theme.S(14), y + (nameHeight - d) / 2 + Theme.S(1), d, d),
+                      blinking && !BlinkLit ? Color.Empty : lamp);
+        }
+        var flags = TextFormatFlags.NoPadding | TextFormatFlags.Left | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
+        TextRenderer.DrawText(g, Text, Theme.Name, new Rectangle(x, y, Width - x - Theme.S(8), nameHeight), Theme.Ink, back, flags);
+        y += nameHeight + Theme.S(3);
+        foreach (var text in lines)
+        {
+            if (y + line > Height) break;
+            TextRenderer.DrawText(g, text, Theme.Small, new Rectangle(x, y, Width - x - Theme.S(10), line), Theme.Muted, back, flags);
+            y += line;
+        }
+        if (Focused && ShowFocusCues)
+            ControlPaint.DrawFocusRectangle(g, Rectangle.Inflate(ClientRectangle, -Theme.S(3), -Theme.S(3)));
+    }
+}
+
+/// <summary>A tab of the console bar; the selected one has the console's colour, as if it were part of it.</summary>
 sealed class TabButton : Button
 {
     bool hover, selected;
@@ -278,8 +401,8 @@ sealed class TabButton : Button
         FlatAppearance.BorderSize = 0;
         Font = Theme.Ui;
         Cursor = Cursors.Hand;
-        Margin = new Padding(0, 0, Theme.S(2), 0);
-        Size = new Size(TextRenderer.MeasureText(text, Theme.Bold).Width + Theme.S(40), Theme.S(36));
+        Margin = Padding.Empty;
+        Size = new Size(TextRenderer.MeasureText(text, Theme.Strong).Width + Theme.S(38), Theme.S(30));
     }
 
     public bool Selected
@@ -295,7 +418,7 @@ sealed class TabButton : Button
         Invalidate();
     }
 
-    /// <summary>Colour of the state dot (Color.Empty = none).</summary>
+    /// <summary>The tab's lamp (Color.Empty = none).</summary>
     public Color Dot
     {
         get => dot;
@@ -308,153 +431,131 @@ sealed class TabButton : Button
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
-        var back = selected ? Theme.ConsoleBg : hover ? Color.FromArgb(52, 52, 56) : Theme.ConsoleBar;
+        var back = selected ? Theme.ConsoleBg : hover ? Color.FromArgb(38, 43, 45) : Theme.ConsoleBar;
         g.Clear(back);
-        if (selected)
-            using (var accent = new SolidBrush(Color.FromArgb(96, 165, 250)))
-                g.FillRectangle(accent, 0, 0, Width, Theme.S(2));
-        int x = Theme.S(12);
-        if (dot != Color.Empty)
-        {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            int d = Theme.S(8);
-            using (var brush = new SolidBrush(dot)) g.FillEllipse(brush, x, (Height - d) / 2, d, d);
-            g.SmoothingMode = SmoothingMode.Default;
-        }
+        int d = Theme.S(7), x = Theme.S(11);
+        if (dot != Color.Empty) Lamp.Draw(g, new Rectangle(x, (Height - d) / 2, d, d), dot);
         x += Theme.S(14);
-        TextRenderer.DrawText(g, Text, selected ? Theme.Bold : Theme.Ui, new Rectangle(x, 0, Width - x, Height),
-                              selected ? Color.White : Color.FromArgb(180, 180, 188), back,
+        TextRenderer.DrawText(g, Text, selected ? Theme.Strong : Theme.Ui, new Rectangle(x, 0, Width - x, Height),
+                              selected ? Theme.ConsoleBright : Theme.ConsoleDim, back,
                               TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
+        if (Focused && ShowFocusCues)
+            ControlPaint.DrawFocusRectangle(g, Rectangle.Inflate(ClientRectangle, -Theme.S(2), -Theme.S(3)), Theme.ConsoleText, back);
     }
 }
 
-/// <summary>A white panel with rounded corners and an optional title.</summary>
-class Card : Panel
+/// <summary>A titled part of a page: the title in DIN lettering and the controls under it, with no box around them.</summary>
+class Section : Panel
 {
-    public string Title;
+    public readonly string Title;
 
-    public Card(string title = null)
+    public Section(string title = null)
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint |
                  ControlStyles.ResizeRedraw, true);
         Title = title;
-        BackColor = Theme.Card;
-        Padding = title == null ? Theme.P(14, 12, 14, 10) : Theme.P(14, 38, 14, 10);
-        Margin = Theme.P(0, 0, 10, 10);
+        BackColor = Theme.Sheet;
+        Padding = title == null ? Padding.Empty : new Padding(0, Theme.LineHeight(Theme.Heading) + Theme.S(8), 0, 0);
+        Margin = Theme.P(0, 0, 28, 12);
     }
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        var g = e.Graphics;
-        g.Clear(Theme.BackOf(this));
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        using (var path = Theme.Round(new Rectangle(0, 0, Width - 1, Height - 1), Theme.S(8)))
-        using (var brush = new SolidBrush(Theme.Card))
-        using (var pen = new Pen(Theme.Border))
-        {
-            g.FillPath(brush, path);
-            g.DrawPath(pen, path);
-        }
-        g.SmoothingMode = SmoothingMode.Default;
+        e.Graphics.Clear(BackColor);
         if (Title != null)
-            TextRenderer.DrawText(g, Title, Theme.Bold, new Point(Theme.S(14), Theme.S(12)), Theme.Text, Theme.Card,
-                                  TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(e.Graphics, Title, Theme.Heading, Point.Empty, Theme.Ink, BackColor, TextFormatFlags.NoPadding);
     }
 }
 
-/// <summary>One of the three boxes at the top: a coloured dot, a title, the state and a detail line.</summary>
-sealed class StatusCard : Control
+/// <summary>The grey strip that holds a page's main actions, in the cabinet colour like the rail.</summary>
+sealed class Band : Panel
 {
-    readonly string title, glyph;
-    string main = "", detail = "";
-    Color dot = Theme.Gray;
-    bool hover;
-
-    public StatusCard(string title, string glyph)
+    public Band()
     {
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint |
-                 ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
-        this.title = title;
-        this.glyph = glyph;
-        Cursor = Cursors.Hand;
-        Margin = Theme.P(0, 0, 10, 0);
-        AccessibleRole = AccessibleRole.PushButton;
-        AccessibleName = title;
-    }
-
-    public void Set(Color dotColor, string mainText, string detailText)
-    {
-        if (dot == dotColor && main == mainText && detail == detailText) return;
-        dot = dotColor;
-        main = mainText ?? "";
-        detail = detailText ?? "";
-        AccessibleDescription = main + " - " + detail;
-        Invalidate();
-    }
-
-    protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
-    protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
-
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        var g = e.Graphics;
-        g.Clear(Theme.BackOf(this));
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        var back = hover ? Color.FromArgb(248, 250, 252) : Color.White;
-        using (var path = Theme.Round(new Rectangle(0, 0, Width - 1, Height - 1), Theme.S(8)))
-        using (var brush = new SolidBrush(back))
-        using (var pen = new Pen(hover ? Color.FromArgb(180, 190, 205) : Theme.Border))
-        {
-            g.FillPath(brush, path);
-            g.DrawPath(pen, path);
-        }
-        int pad = Theme.S(10), d = Theme.S(11), top = (Height - Theme.S(52)) / 2;
-        using (var halo = new SolidBrush(Color.FromArgb(50, dot)))
-            g.FillEllipse(halo, pad - Theme.S(3), top + Theme.S(2) - Theme.S(3), d + Theme.S(6), d + Theme.S(6));
-        using (var brush = new SolidBrush(dot))
-            g.FillEllipse(brush, pad, top + Theme.S(2), d, d);
-        g.SmoothingMode = SmoothingMode.Default;
-        var flags = TextFormatFlags.NoPadding | TextFormatFlags.Left | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
-        int x = pad + d + Theme.S(10), width = Width - x - pad - Theme.S(22);
-        TextRenderer.DrawText(g, title.ToUpperInvariant(), Theme.SmallBold, new Rectangle(x, top, width, Theme.S(15)),
-                              Theme.Muted, back, flags);
-        TextRenderer.DrawText(g, main, Theme.Bold, new Rectangle(x, top + Theme.S(15), width + Theme.S(22), Theme.S(19)), Theme.Text, back, flags);
-        TextRenderer.DrawText(g, detail, Theme.Small, new Rectangle(x, top + Theme.S(35), width + Theme.S(22), Theme.S(17)), Theme.Muted, back, flags);
-        if (Theme.HasIcons)
-            TextRenderer.DrawText(g, glyph, Theme.IconBig, new Rectangle(Width - pad - Theme.S(20), top - Theme.S(1), Theme.S(22), Theme.S(22)),
-                                  Color.FromArgb(203, 208, 216), back, TextFormatFlags.NoPadding);
+        BackColor = Theme.Cabinet;
+        Padding = Theme.P(12, 10, 12, 4);
+        Margin = Theme.P(0, 2, 0, 10);
     }
 }
 
-/// <summary>The app's logo (the same drawing as EdgeControl.ico): a low-poly mesh on a blue-violet tile.</summary>
+/// <summary>The app's mark, the same drawing as EdgeControl.ico: on a grey plate, a patch of a triangle mesh rebuilt from
+/// the right while the points on the left still wait, which is what the edge server does.</summary>
 static class Logo
 {
     public static void Draw(Graphics g, Rectangle r)
     {
+        float s = r.Width;
+        PointF At(double u, double v) => new PointF(r.X + (float)(u * s), r.Y + (float)(v * s));
+        var mode = g.SmoothingMode;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        using (var path = Theme.Round(r, (int)(r.Width * 0.22)))
-        using (var brush = new LinearGradientBrush(r, Color.FromArgb(59, 130, 246), Color.FromArgb(124, 58, 237), 45f))
+        float line = Math.Max(1f, (float)Math.Round(s / 48f));
+        var plate = Color.FromArgb(233, 235, 230);
+        using (var path = Theme.Round(new RectangleF(r.X + line / 2, r.Y + line / 2, s - line, s - line), Math.Max(1.5f, s * 0.08f)))
+        using (var brush = new SolidBrush(plate))
+        using (var pen = new Pen(Color.FromArgb(112, 118, 111), line))
+        {
             g.FillPath(brush, path);
-        float cx = r.X + r.Width * 0.5f, cy = r.Y + r.Height * 0.52f, radius = r.Width * 0.31f;
-        var points = Enumerable.Range(0, 6).Select(i =>
-        {
-            var a = (-90 + 60 * i) * Math.PI / 180;
-            return new PointF(cx + radius * (float)Math.Cos(a), cy + radius * (float)Math.Sin(a));
-        }).ToArray();
-        float w = Math.Max(1.2f, r.Width * 0.055f);
-        using (var pen = new Pen(Color.White, w))
-        using (var spoke = new Pen(Color.FromArgb(200, 255, 255, 255), w * 0.75f))
-        using (var dot = new SolidBrush(Color.White))
-        {
-            for (int i = 0; i < 6; i++)
-            {
-                g.DrawLine(pen, points[i], points[(i + 1) % 6]);
-                g.DrawLine(spoke, new PointF(cx, cy), points[i]);
-            }
-            foreach (var p in points.Concat(new[] { new PointF(cx, cy) }))
-                g.FillEllipse(dot, p.X - w * 1.25f, p.Y - w * 1.25f, w * 2.5f, w * 2.5f);
+            g.DrawPath(pen, path);
         }
-        g.SmoothingMode = SmoothingMode.Default;
+        // six facets around one vertex, a little irregular like a mesh rebuilt from a scan, lit from the top left
+        var centre = At(.61, .52);
+        var ring = new[] { At(.37, .49), At(.49, .26), At(.74, .28), At(.86, .50), At(.74, .74), At(.50, .75) };
+        var shades = new[]
+        {
+            Color.FromArgb(104, 184, 130), Color.FromArgb(80, 166, 112), Color.FromArgb(58, 148, 94),
+            Color.FromArgb(20, 94, 53), Color.FromArgb(28, 116, 66), Color.FromArgb(40, 134, 80),
+        };
+        for (int i = 0; i < 6; i++)
+        {
+            var facet = new[] { centre, ring[i], ring[(i + 1) % 6] };
+            using (var brush = new SolidBrush(shades[i])) g.FillPolygon(brush, facet);
+            if (s >= 30)  // the edges between facets; below that they would only blur them
+                using (var pen = new Pen(plate, line) { LineJoin = LineJoin.Round })
+                    g.DrawPolygon(pen, facet);
+        }
+        // the points still waiting on the left, where the next facets will be
+        var loose = new[] { At(.25, .29), At(.15, .52), At(.26, .73) };
+        float dot = Math.Max(1.7f, s * 0.075f);
+        using (var brush = new SolidBrush(Theme.Ink))
+            foreach (var p in loose)
+                g.FillEllipse(brush, p.X - dot / 2, p.Y - dot / 2, dot, dot);
+        g.SmoothingMode = mode;
+    }
+
+    /// <summary>EdgeControl.exe --icon FILE: the mark as a Windows icon (PNG images, 16 to 256 pixels).</summary>
+    public static void WriteIcon(string path)
+    {
+        var sizes = new[] { 16, 20, 24, 32, 40, 48, 64, 128, 256 };
+        var images = sizes.Select(size =>
+        {
+            using var bitmap = new Bitmap(size, size, PixelFormat.Format32bppArgb);
+            using (var g = Graphics.FromImage(bitmap))
+            {
+                g.Clear(Color.Transparent);
+                Draw(g, new Rectangle(0, 0, size, size));
+            }
+            using var png = new MemoryStream();
+            bitmap.Save(png, ImageFormat.Png);
+            return png.ToArray();
+        }).ToList();
+        using var file = new BinaryWriter(File.Create(path));
+        file.Write((short)0);
+        file.Write((short)1);
+        file.Write((short)sizes.Length);
+        int offset = 6 + 16 * sizes.Length;
+        for (int i = 0; i < sizes.Length; i++)
+        {
+            file.Write((byte)(sizes[i] >= 256 ? 0 : sizes[i]));
+            file.Write((byte)(sizes[i] >= 256 ? 0 : sizes[i]));
+            file.Write((byte)0);
+            file.Write((byte)0);
+            file.Write((short)1);
+            file.Write((short)32);
+            file.Write(images[i].Length);
+            file.Write(offset);
+            offset += images[i].Length;
+        }
+        foreach (var image in images) file.Write(image);
     }
 }
 
@@ -479,20 +580,20 @@ static class Make
 {
     public static Label Label(string text, Font font = null, Color? color = null, int maxWidth = 0) => new Label
     {
-        Text = text, AutoSize = true, Font = font ?? Theme.Ui, ForeColor = color ?? Theme.Text,
+        Text = text, AutoSize = true, Font = font ?? Theme.Ui, ForeColor = color ?? Theme.Ink,
         BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, Theme.S(4)),
         MaximumSize = maxWidth > 0 ? new Size(Theme.S(maxWidth), 0) : Size.Empty, UseMnemonic = false,
     };
 
-    public static RadioButton Radio(string text, bool bold = false) => new RadioButton
+    public static RadioButton Radio(string text) => new RadioButton
     {
-        Text = text, AutoSize = true, Font = bold ? Theme.Bold : Theme.Ui, ForeColor = Theme.Text,
+        Text = text, AutoSize = true, Font = Theme.Ui, ForeColor = Theme.Ink,
         Margin = new Padding(0, Theme.S(2), Theme.S(8), Theme.S(1)), UseMnemonic = false, Cursor = Cursors.Hand,
     };
 
     public static CheckBox Check(string text, bool value = false) => new CheckBox
     {
-        Text = text, AutoSize = true, Checked = value, Font = Theme.Ui, ForeColor = Theme.Text,
+        Text = text, AutoSize = true, Checked = value, Font = Theme.Ui, ForeColor = Theme.Ink,
         Margin = new Padding(0, Theme.S(4), Theme.S(14), Theme.S(2)), UseMnemonic = false, Cursor = Cursors.Hand,
     };
 
@@ -546,19 +647,37 @@ static class Make
     /// <summary>Text vertically centred with the controls of a row.</summary>
     public static Label Inline(string text, Color? color = null)
     {
-        var label = Label(text, Theme.Ui, color ?? Theme.Text);
+        var label = Label(text, Theme.Ui, color ?? Theme.Ink);
         label.Margin = new Padding(0, Theme.S(5), Theme.S(6), 0);
         return label;
     }
 
-    /// <summary>A card whose height follows its content (a stack inside).</summary>
-    public static Card CardOf(string title, params Control[] content)
+    /// <summary>A section whose height follows its content (a stack inside); no title = just the controls.</summary>
+    public static Section Section(string title, params Control[] content) => Holding(new Section(title), content);
+
+    /// <summary>The grey strip of a page's main actions.</summary>
+    public static Band Band(params Control[] content) => Holding(new Band(), content);
+
+    static T Holding<T>(T panel, Control[] content) where T : Panel
     {
-        var card = new Card(title) { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Fill };
+        panel.AutoSize = true;
+        panel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        panel.Dock = DockStyle.Fill;
         var stack = Stack(content);
-        stack.Location = new Point(card.Padding.Left, card.Padding.Top);
-        card.Controls.Add(stack);
-        return card;
+        stack.Location = new Point(panel.Padding.Left, panel.Padding.Top);
+        panel.Controls.Add(stack);
+        return panel;
+    }
+
+    /// <summary>A control in a thin frame (lists, previews); a given size instead of filling the parent.</summary>
+    public static Panel Framed(Control inner, Size? size = null)
+    {
+        var frame = new Panel { BackColor = Theme.RuleSoft, Padding = new Padding(1), Margin = Padding.Empty };
+        if (size.HasValue) frame.Size = new Size(size.Value.Width + 2, size.Value.Height + 2);
+        else frame.Dock = DockStyle.Fill;
+        inner.Dock = DockStyle.Fill;
+        frame.Controls.Add(inner);
+        return frame;
     }
 
     /// <summary>A one-column table: rows sized by their content, except the ones given a percentage.</summary>
@@ -571,7 +690,8 @@ static class Make
             table.RowStyles.Add(rows[i].percent > 0 ? new RowStyle(SizeType.Percent, rows[i].percent) : new RowStyle(SizeType.AutoSize));
             if (rows[i].control != null)
             {
-                rows[i].control.Dock = rows[i].percent > 0 || rows[i].control is TableLayoutPanel || rows[i].control is Card
+                rows[i].control.Dock = rows[i].percent > 0 || rows[i].control is TableLayoutPanel || rows[i].control is Section ||
+                                       rows[i].control is Band
                     ? DockStyle.Fill : rows[i].control.Dock;
                 table.Controls.Add(rows[i].control, 0, i);
             }
@@ -601,19 +721,18 @@ static class Make
     }
 }
 
-/// <summary>A page of the panel (one entry of the navigation bar).</summary>
+/// <summary>A page of the panel (one entry of the rail).</summary>
 abstract class Page : Panel
 {
     protected readonly MainForm App;
     public abstract string NavText { get; }
-    public abstract string NavGlyph { get; }
 
     protected Page(MainForm app)
     {
         App = app;
         Dock = DockStyle.Fill;
-        BackColor = Theme.Bg;
-        Padding = Theme.P(18, 10, 8, 4);
+        BackColor = Theme.Sheet;
+        Padding = Theme.P(22, 16, 12, 6);
         AutoScroll = true;
         Visible = false;
     }
@@ -624,14 +743,6 @@ abstract class Page : Panel
         root.MinimumSize = new Size(Theme.S(minWidth), Theme.S(minHeight));
         AutoScrollMinSize = root.MinimumSize;
         Controls.Add(root);
-    }
-
-    /// <summary>The page title.</summary>
-    protected static Control Header(string title)
-    {
-        var name = Make.Label(title, Theme.Title);
-        name.Margin = new Padding(0, 0, 0, Theme.S(8));
-        return name;
     }
 
     public virtual void Showing() { }

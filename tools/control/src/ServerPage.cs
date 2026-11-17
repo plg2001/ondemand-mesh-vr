@@ -26,7 +26,6 @@ sealed class Choice
 sealed class ServerPage : Page
 {
     public override string NavText => "Server";
-    public override string NavGlyph => Glyph.Server;
 
     readonly List<SceneObject> objects;
     readonly List<CheckBox> objectChecks = new List<CheckBox>();
@@ -38,8 +37,8 @@ sealed class ServerPage : Page
     TextBox tbExtra, tbCommand, tbRemote;
     FlatButton btnStart, btnStop, btnDocs, btnSessionStart, btnSessionEnd, btnSessionResults;
     Label lblSession;
-    Card advanced;
-    FlatButton lnkAdvanced;
+    Section advanced;
+    Disclosure lnkAdvanced;
     TableLayoutPanel root;
     bool loading = true, sessionEnding;
     string lastSessionDir, sessionFps = "";
@@ -86,7 +85,7 @@ sealed class ServerPage : Page
         rbWifi = Make.Radio("Quest via Wi-Fi");
         rbUsb = Make.Radio("Quest via cavo USB");
         cbIp = Make.Combo(190);
-        var who = Make.CardOf("1 · Chi usa il server", rbSim, rbWifi, Indent(Make.Inline("IP del PC", Theme.Muted), cbIp), rbUsb);
+        var who = Make.Section("Chi usa il server", rbSim, rbWifi, Indent(Make.Inline("IP del PC", Theme.Muted), cbIp), rbUsb);
         tips.SetToolTip(rbSim, "python -m edge.server: il server ascolta solo su 127.0.0.1 (l'editor Unity con l'XR Device Simulator).");
         tips.SetToolTip(rbWifi, "quest.py wifi --serve: scrive l'indirizzo di questo PC sul visore (se è collegato col cavo; poi il cavo si può " +
                                 "staccare) e avvia il server raggiungibile dalla rete. Serve anche il simulatore.");
@@ -103,7 +102,7 @@ sealed class ServerPage : Page
         chkFaces = Make.Check("riduci a");
         chkFaces.Margin = new Padding(0, Theme.S(4), Theme.S(4), 0);
         nFaces = Make.Number(50, 200000, 1000, 70);
-        var how = Make.CardOf("2 · Come ricostruisce",
+        var how = Make.Section("Come ricostruisce",
             Make.Row(rbMock, nDelay, Make.Inline("s", Theme.Muted)),
             Make.Row(rbModel, cbModel),
             Indent(Make.Inline("rinuncia dopo", Theme.Muted), nBudget, Make.Inline("s", Theme.Muted)),
@@ -132,19 +131,19 @@ sealed class ServerPage : Page
             objectChecks.Add(check);
             grid.Controls.Add(check);
         }
-        var which = Make.CardOf("3 · Quali oggetti", rbAll, rbOnly, grid);
+        var which = Make.Section("Quali oggetti", rbAll, rbOnly, grid);
 
         // start / stop, and the measured session
-        btnStart = new FlatButton("Avvia server", Look.Primary, Glyph.Play);
-        btnStop = new FlatButton("Ferma server", Look.Danger, Glyph.Stop);
-        btnDocs = new FlatButton("API", Look.Ghost, Glyph.Web);
+        btnStart = new FlatButton("Avvia server", Look.Start);
+        btnStop = new FlatButton("Ferma server", Look.Stop);
+        btnDocs = new FlatButton("API", Look.Link);
         btnStart.Click += (s, e) => StartServer();
         btnStop.Click += (s, e) => StopServer();
         btnDocs.Click += (s, e) => Shell.Open(App.Monitors.BaseUrl + "/docs");
         tips.SetToolTip(btnDocs, "Documentazione interattiva delle API del server (/docs), nel browser.");
-        btnSessionStart = new FlatButton("Sessione di misura", Look.Primary, Glyph.Record);
-        btnSessionEnd = new FlatButton("Termina e salva", Look.Danger, Glyph.Save);
-        btnSessionResults = new FlatButton("Riassunto", Look.Ghost, Glyph.Document) { Visible = false };
+        btnSessionStart = new FlatButton("Sessione di misura", Look.Start);
+        btnSessionEnd = new FlatButton("Termina e salva", Look.Stop);
+        btnSessionResults = new FlatButton("Riassunto", Look.Link) { Visible = false };
         btnSessionStart.Click += (s, e) => StartSession();
         btnSessionEnd.Click += (s, e) => EndSession();
         btnSessionResults.Click += (s, e) =>
@@ -162,25 +161,25 @@ sealed class ServerPage : Page
         var serverHalf = Make.Row(btnStart, btnStop, btnDocs);
         var sessionHalf = Make.Stack(Make.Row(btnSessionStart, btnSessionEnd, btnSessionResults, lblSession),
                                      Make.Row(chkRestart, chkRemote, tbRemote));
-        var divider = new Panel { Size = new Size(1, Theme.S(20)), BackColor = Theme.Border, Margin = new Padding(Theme.S(4), Theme.S(2), Theme.S(16), Theme.S(2)) };
+        var divider = new Panel { Size = new Size(1, Theme.S(28)), BackColor = Theme.Rule, Margin = new Padding(Theme.S(8), 0, Theme.S(20), 0) };
         var actionsTable = Make.Columns((serverHalf, 0), (divider, 0), (sessionHalf, 100));
         actionsTable.Dock = DockStyle.None;
-        var actions = Make.CardOf(null, actionsTable);
+        var actions = Make.Band(actionsTable);
 
         // the command that will run, and the advanced options
-        lnkAdvanced = new FlatButton("Opzioni avanzate", Look.Ghost, Glyph.Settings) { Margin = new Padding(0, 0, Theme.S(12), 0) };
-        lnkAdvanced.Click += (s, e) => ToggleAdvanced(!advanced.Visible);
-        tips.SetToolTip(lnkAdvanced, "Porta, dispositivo e precisione del modello, accuratezza, salvataggio delle mesh, altre opzioni.");
         tbCommand = new TextBox
         {
-            ReadOnly = true, BorderStyle = BorderStyle.FixedSingle, Font = Theme.Mono, BackColor = Color.FromArgb(248, 250, 252),
-            ForeColor = Color.FromArgb(55, 65, 81), Dock = DockStyle.Fill, Margin = new Padding(0, Theme.S(3), Theme.S(6), 0),
+            ReadOnly = true, BorderStyle = BorderStyle.FixedSingle, Font = Theme.Mono, BackColor = Color.FromArgb(246, 247, 244),
+            ForeColor = Theme.Ink, Dock = DockStyle.Fill, Margin = new Padding(0, Theme.S(3), Theme.S(6), 0),
         };
         tips.SetToolTip(tbCommand, "Il comando che «Avvia server» esegue nella cartella del progetto (si può copiare in un terminale).");
-        var copy = new FlatButton("Copia", Look.Ghost, Glyph.Copy);
+        var copy = new FlatButton("Copia");
         copy.Click += (s, e) => { if (tbCommand.TextLength > 0) Clipboard.SetText(tbCommand.Text); };
-        var commandRow = Make.Columns((lnkAdvanced, 0), (Make.Inline("Comando", Theme.Muted), 0), (tbCommand, 100), (copy, 0));
-        commandRow.Margin = new Padding(0, 0, Theme.S(10), Theme.S(6));
+        var commandRow = Make.Columns((Make.Inline("Comando", Theme.Muted), 0), (tbCommand, 100), (copy, 0));
+        commandRow.Margin = new Padding(0, 0, Theme.S(10), Theme.S(2));
+        lnkAdvanced = new Disclosure("Opzioni avanzate");
+        lnkAdvanced.Click += (s, e) => ToggleAdvanced(!advanced.Visible);
+        tips.SetToolTip(lnkAdvanced, "Porta, dispositivo e precisione del modello, accuratezza, salvataggio delle mesh, altre opzioni.");
 
         nPort = Make.Number(1024, 65535, 8000, 66);
         cbDevice = Make.Combo(66, "auto", "cuda", "cpu");
@@ -193,20 +192,23 @@ sealed class ServerPage : Page
         tbExtra = Make.Text(230, "", "altre opzioni di edge.server");
         tips.SetToolTip(nTokens, "Tronca la generazione dopo N token (mesh parziali). 0 = nessun limite.");
         tips.SetToolTip(tbExtra, "Opzioni in più per python -m edge.server, per esempio --scene altra_scena.");
-        advanced = Make.CardOf(null,
-            Make.Row(Make.Inline("Porta"), nPort, Make.Inline("   Modello generativo:", Theme.Muted), Make.Inline("dispositivo"), cbDevice,
+        var generative = Make.Inline("Modello generativo:", Theme.Muted);
+        generative.Margin = new Padding(Theme.S(16), Theme.S(5), Theme.S(8), 0);
+        advanced = Make.Section(null,
+            Make.Row(Make.Inline("Porta"), nPort, generative, Make.Inline("dispositivo"), cbDevice,
                      Make.Inline("precisione"), cbPrecision, Make.Inline("variante"), cbVariant, Make.Inline("max token"), nTokens),
             Make.Row(chkQuality, chkSave, Make.Inline("Altro"), tbExtra));
+        advanced.Padding = new Padding(Theme.S(14), Theme.S(2), 0, 0);
         advanced.Visible = false;
 
         root = Make.Column(
-            (Header("Server Edge"), 0),
             (Make.Columns((who, 30), (how, 37), (which, 33)), 0),
             (actions, 0),
             (commandRow, 0),
+            (lnkAdvanced, 0),
             (advanced, 0),
             (new Panel { BackColor = Color.Transparent }, 100));
-        Install(root, 960, 420);
+        Install(root, 960, 400);
 
         // WinForms makes radio buttons exclusive only inside one container: these sit in different rows
         foreach (var group in new[] { new[] { rbSim, rbWifi, rbUsb }, new[] { rbMock, rbModel, rbClassic }, new[] { rbAll, rbOnly } })
@@ -244,13 +246,13 @@ sealed class ServerPage : Page
         cbIp.Enter += (s, e) => rbWifi.Checked = true;
     }
 
-    void ToggleAdvanced(bool show)
+    public void ToggleAdvanced(bool show)
     {
         advanced.Visible = show;
-        lnkAdvanced.Text = show ? "Nascondi le opzioni" : "Opzioni avanzate";
+        lnkAdvanced.Open = show;
         // the page gets longer (it scrolls if the window is short) and shows the options just opened
         int extra = show ? advanced.GetPreferredSize(Size.Empty).Height + Theme.S(16) : 0;
-        root.MinimumSize = new Size(Theme.S(960), Theme.S(420) + extra);
+        root.MinimumSize = new Size(Theme.S(960), Theme.S(400) + extra);
         AutoScrollMinSize = root.MinimumSize;
         if (show && IsHandleCreated) BeginInvoke((Action)(() => ScrollControlIntoView(advanced)));
     }
@@ -394,8 +396,8 @@ sealed class ServerPage : Page
             var task = App.TaskOf(ConsoleKind.Session);
             var rows = App.Requests.Count(r => r.Epoch >= ToEpoch(sessionStarted) - 2);
             text = sessionEnding ? "salvataggio…"
-                : $"{Format.Duration(task.Elapsed)}" + (sessionFps.Length > 0 ? $" · {sessionFps} fps" : "") +
-                  $" · {Format.Count(rows, "richiesta", "richieste")}";
+                : $"{Format.Duration(task.Elapsed)}" + (sessionFps.Length > 0 ? $", {sessionFps} fps" : "") +
+                  $", {Format.Count(rows, "richiesta", "richieste")}";
         }
         if (lblSession.Text != text) lblSession.Text = text;
     }
@@ -505,13 +507,13 @@ sealed class ServerPage : Page
         if (App.IsRunning(ConsoleKind.Session)) return;
         if (rbSim.Checked)
         {
-            Info("La sessione di misura si fa con il visore: nel riquadro 1 scegli «Quest via Wi-Fi» o «Quest via cavo USB».");
+            Info("La sessione di misura si fa con il visore: in «Chi usa il server» scegli «Quest via Wi-Fi» o «Quest via cavo USB».");
             return;
         }
         bool remote = chkRemote.Checked;
         if (remote && !rbWifi.Checked)
         {
-            Info("Un server su un altro PC si raggiunge solo via Wi-Fi: nel riquadro 1 scegli «Quest via Wi-Fi».");
+            Info("Un server su un altro PC si raggiunge solo via Wi-Fi: in «Chi usa il server» scegli «Quest via Wi-Fi».");
             return;
         }
         if (remote && !Regex.IsMatch(tbRemote.Text.Trim(), @"^https?://[^/\s]+"))

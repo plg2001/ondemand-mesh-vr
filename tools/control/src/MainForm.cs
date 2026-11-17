@@ -1,9 +1,11 @@
-// The window: status cards at the top, navigation on the left, the selected page, the console at the bottom.
+// The window: the rail on the left (one entry per page, each with the live state of what the page is about), the
+// selected page, the console at the bottom.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
@@ -26,12 +28,15 @@ sealed class MainForm : Form
     readonly Dictionary<ConsoleKind, ConsoleTab> consoles = new Dictionary<ConsoleKind, ConsoleTab>();
     readonly Dictionary<ConsoleKind, TabButton> consoleButtons = new Dictionary<ConsoleKind, TabButton>();
     readonly List<Page> pages = new List<Page>();
-    readonly List<NavButton> navButtons = new List<NavButton>();
+    readonly List<RailEntry> rail = new List<RailEntry>();
+    readonly ToolTip railTips = new ToolTip { InitialDelay = 400, AutoPopDelay = 15000 };
     readonly List<string> history = new List<string>();
     int historyIndex;
     ConsoleTab activeConsole;
     Page currentPage;
-    StatusCard cardServer, cardHeadset, cardPc;
+    RailEntry railServer, railHeadset, railResults, railTools;
+    string[] sessions = new string[0];
+    DateTime sessionsCheckedAt = DateTime.MinValue;
     SplitContainer split;
     Panel consoleBody;
     SmoothListView requestsView;
@@ -42,6 +47,7 @@ sealed class MainForm : Form
     FlatButton btnInterrupt;
     readonly Timer flushTimer = new Timer { Interval = 80 };
     readonly Timer clockTimer = new Timer { Interval = 1000 };
+    readonly Timer blinkTimer = new Timer { Interval = 500 };
     readonly string snapshotDir;
     bool closeAfterSession;
 
@@ -56,7 +62,7 @@ sealed class MainForm : Form
         Monitors = new Monitors(this, repo);
         Text = "EdgeControl - ondemand-mesh-vr";
         Font = Theme.Ui;
-        BackColor = Theme.Bg;
+        BackColor = Theme.Cabinet;
         AutoScaleMode = AutoScaleMode.None;
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { /* default icon */ }
         var area = Screen.PrimaryScreen.WorkingArea;
@@ -70,24 +76,24 @@ sealed class MainForm : Form
             consoles[kind] = new ConsoleTab(kind, name);
 
         SuspendLayout();
+        // the splitter has the colour of the console bar under it: the console seems to start there
         split = new SplitContainer
         {
-            Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, BackColor = Theme.Border,
+            Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, BackColor = Theme.ConsoleBar,
             SplitterWidth = Theme.S(5), FixedPanel = FixedPanel.None, Panel1MinSize = Theme.S(260), Panel2MinSize = Theme.S(120),
         };
-        split.Panel1.BackColor = Theme.Bg;
+        split.Panel1.BackColor = Theme.Sheet;
         split.Panel2.BackColor = Theme.ConsoleBg;
         Controls.Add(split);
-        Controls.Add(BuildHeader());
 
         ServerPage = new ServerPage(this);
         HeadsetPage = new HeadsetPage(this);
         ResultsPage = new ResultsPage(this);
         pages.AddRange(new Page[] { ServerPage, HeadsetPage, ResultsPage, new ToolsPage(this) });
-        var pageHost = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg };
+        var pageHost = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Sheet };
         foreach (var page in pages) pageHost.Controls.Add(page);
         split.Panel1.Controls.Add(pageHost);
-        split.Panel1.Controls.Add(BuildNavigation());
+        split.Panel1.Controls.Add(BuildRail());
         split.Panel2.Controls.Add(BuildConsole());
         ResumeLayout(true);
 
@@ -95,75 +101,71 @@ sealed class MainForm : Form
         Monitors.Headset += OnHeadset;
         Monitors.Pc += OnPc;
         flushTimer.Tick += (s, e) => { foreach (var c in consoles.Values) c.Flush(); };
-        clockTimer.Tick += (s, e) => { UpdateCards(); UpdateRequestsDot(); currentPage?.StatusChanged(); };
+        clockTimer.Tick += (s, e) => { UpdateRail(); UpdateRequestsDot(); currentPage?.StatusChanged(); };
+        blinkTimer.Tick += (s, e) =>
+        {
+            RailEntry.BlinkLit = !RailEntry.BlinkLit;
+            foreach (var entry in rail.Where(r => r.Blinking)) entry.Invalidate();
+        };
 
         var startPage = Settings.GetInt("page", 0);
         ShowPage(pages[Math.Max(0, Math.Min(pages.Count - 1, startPage))]);
         ShowConsole(ConsoleKind.Commands);
-        UpdateCards();
+        UpdateRail();
         if (!Repo.HasVenv)
             consoles[ConsoleKind.Commands].Write($"{ConsoleTab.Failed}Ambiente Python non trovato ({Repo.VenvPython}).\n" +
                            "  Preparalo da Strumenti > Prepara questo PC.\n\n");
     }
 
     // ------------------------------------------------------------------ layout
-    Control BuildHeader()
+    /// <summary>One entry per page, each with the live state of what the page is about (the server, the headset, the
+    /// sessions saved, this PC), and the nameplate at the bottom.</summary>
+    Control BuildRail()
     {
-        var header = new Panel { Dock = DockStyle.Top, Height = Theme.S(76), BackColor = Color.White, Padding = Theme.P(14, 8, 6, 8) };
-        header.Paint += (s, e) =>
+        var host = new Panel { Dock = DockStyle.Left, Width = Theme.S(216), BackColor = Theme.Cabinet };
+        var entries = new FlowLayoutPanel
         {
-            using var pen = new Pen(Theme.Border);
-            e.Graphics.DrawLine(pen, 0, header.Height - 1, header.Width, header.Height - 1);
+            Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Theme.Cabinet,
+            Padding = new Padding(0, Theme.S(8), 0, 0), Margin = Padding.Empty,
         };
-        var brand = new Panel { Dock = DockStyle.Left, Width = Theme.S(196), BackColor = Color.White };
-        brand.Paint += (s, e) =>
+        railServer = new RailEntry("Server", 3, true);
+        railHeadset = new RailEntry("Visore", 2, true);
+        railResults = new RailEntry("Risultati", 2, false);
+        railTools = new RailEntry("Strumenti", 2, true);
+        rail.AddRange(new[] { railServer, railHeadset, railResults, railTools });
+        for (int i = 0; i < pages.Count; i++)
+        {
+            var target = pages[i];
+            rail[i].Width = host.Width;
+            rail[i].Click += (s, e) => ShowPage(target);
+            entries.Controls.Add(rail[i]);
+        }
+        var plate = new Panel { Dock = DockStyle.Bottom, Height = Theme.S(46), BackColor = Theme.Cabinet };
+        plate.Paint += (s, e) =>
         {
             var g = e.Graphics;
-            int size = Theme.S(40), y = (brand.Height - size) / 2;
-            Logo.Draw(g, new Rectangle(0, y, size, size));
-            int x = size + Theme.S(12);
-            TextRenderer.DrawText(g, "EdgeControl", Theme.Subtitle, new Point(x, y - Theme.S(1)), Theme.Text, TextFormatFlags.NoPadding);
-            TextRenderer.DrawText(g, "ondemand-mesh-vr", Theme.Small, new Point(x, y + Theme.S(23)), Theme.Muted, TextFormatFlags.NoPadding);
+            int size = Theme.S(22), y = (plate.Height - size) / 2;
+            Logo.Draw(g, new Rectangle(Theme.S(14), y, size, size));
+            var name = TextRenderer.MeasureText("EdgeControl", Theme.Heading, Size.Empty, TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, "EdgeControl", Theme.Heading, new Point(Theme.S(14) + size + Theme.S(9), (plate.Height - name.Height) / 2),
+                                  Theme.Muted, TextFormatFlags.NoPadding);
         };
-        cardServer = new StatusCard("Server Edge", Glyph.Server) { Dock = DockStyle.Fill };
-        cardHeadset = new StatusCard("Visore", Glyph.Headset) { Dock = DockStyle.Fill };
-        cardPc = new StatusCard("Questo PC", Glyph.Tools) { Dock = DockStyle.Fill };
-        cardServer.Click += (s, e) => ShowPage(ServerPage);
-        cardHeadset.Click += (s, e) => ShowPage(HeadsetPage);
-        cardPc.Click += (s, e) => ShowPage(pages[3]);
-        var cards = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = Color.White };
-        for (int i = 0; i < 3; i++) cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f));
-        cards.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        cards.Controls.Add(cardServer, 0, 0);
-        cards.Controls.Add(cardHeadset, 1, 0);
-        cards.Controls.Add(cardPc, 2, 0);
-        header.Controls.Add(cards);
-        header.Controls.Add(brand);
-        return header;
-    }
-
-    Control BuildNavigation()
-    {
-        var nav = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Left, Width = Theme.S(170), BackColor = Theme.Nav, FlowDirection = FlowDirection.TopDown,
-            WrapContents = false, Padding = new Padding(0, Theme.S(10), 0, 0),
-        };
-        foreach (var page in pages)
-        {
-            var button = new NavButton(page.NavText, page.NavGlyph) { Width = nav.Width };
-            var target = page;
-            button.Click += (s, e) => ShowPage(target);
-            navButtons.Add(button);
-            nav.Controls.Add(button);
-        }
-        return nav;
+        // the rail's right edge, broken where the selected entry joins the page
+        foreach (var panel in new Control[] { entries, plate })
+            panel.Paint += (s, e) =>
+            {
+                using var pen = new Pen(Theme.Rule);
+                e.Graphics.DrawLine(pen, panel.Width - 1, 0, panel.Width - 1, panel.Height);
+            };
+        host.Controls.Add(entries);
+        host.Controls.Add(plate);
+        return host;
     }
 
     Control BuildConsole()
     {
         var host = new Panel { Dock = DockStyle.Fill, BackColor = Theme.ConsoleBg };
-        var bar = new Panel { Dock = DockStyle.Top, Height = Theme.S(36), BackColor = Theme.ConsoleBar };
+        var bar = new Panel { Dock = DockStyle.Top, Height = Theme.S(30), BackColor = Theme.ConsoleBar };
         var tabs = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, BackColor = Theme.ConsoleBar, Padding = Padding.Empty };
         foreach (var tab in consoles.Values)
         {
@@ -182,11 +184,11 @@ sealed class MainForm : Form
         var tools = new FlowLayoutPanel
         {
             Dock = DockStyle.Right, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false,
-            BackColor = Theme.ConsoleBar, Padding = new Padding(0, Theme.S(3), Theme.S(4), 0),
+            BackColor = Theme.ConsoleBar, Padding = new Padding(0, 0, Theme.S(4), 0),
         };
-        btnInterrupt = ConsoleButton("Interrompi", Glyph.Stop, InterruptActive);
+        btnInterrupt = ConsoleButton("Interrompi", InterruptActive, stops: true);
         tools.Controls.Add(btnInterrupt);
-        tools.Controls.Add(ConsoleButton("Pulisci", Glyph.Delete, () =>
+        tools.Controls.Add(ConsoleButton("Pulisci", () =>
         {
             if (requestsShown)
             {
@@ -195,32 +197,32 @@ sealed class MainForm : Form
             }
             else activeConsole.Clear();
         }));
-        tools.Controls.Add(ConsoleButton("Copia", Glyph.Copy, () =>
+        tools.Controls.Add(ConsoleButton("Copia", () =>
         {
             var text = requestsShown ? RequestsText("\t") : activeConsole.Box.Text;
             if (text.Length > 0) Clipboard.SetText(text);
         }));
-        tools.Controls.Add(ConsoleButton("Salva", Glyph.Save, SaveConsole));
+        tools.Controls.Add(ConsoleButton("Salva…", SaveConsole));
         bar.Controls.Add(tabs);
         bar.Controls.Add(tools);
 
-        var inputRow = new Panel { Dock = DockStyle.Bottom, Height = Theme.S(34), BackColor = Theme.ConsoleBar, Padding = Theme.P(8, 5, 6, 5) };
+        var inputRow = new Panel { Dock = DockStyle.Bottom, Height = Theme.S(30), BackColor = Theme.ConsoleBar, Padding = Theme.P(12, 7, 6, 4) };
         input = new TextBox
         {
-            Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Theme.ConsoleBar, ForeColor = Color.White,
+            Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Theme.ConsoleBar, ForeColor = Theme.ConsoleBright,
             Font = Theme.Mono,
         };
         input.KeyDown += InputKeyDown;
         var prompt = new Label
         {
-            Dock = DockStyle.Left, Text = ">", Width = Theme.S(18), ForeColor = Color.FromArgb(96, 165, 250), Font = Theme.Mono,
+            Dock = DockStyle.Left, Text = ">", Width = Theme.S(18), ForeColor = Theme.ConsoleDim, Font = Theme.Mono,
             TextAlign = ContentAlignment.TopLeft, Padding = new Padding(0, Theme.S(1), 0, 0),
         };
         inputRow.Controls.Add(input);
         inputRow.Controls.Add(prompt);
         input.BringToFront();
 
-        consoleBody = new Panel { Dock = DockStyle.Fill, BackColor = Theme.ConsoleBg, Padding = Theme.P(10, 6, 2, 4) };
+        consoleBody = new Panel { Dock = DockStyle.Fill, BackColor = Theme.ConsoleBg, Padding = Theme.P(12, 8, 2, 4) };
         foreach (var tab in consoles.Values) consoleBody.Controls.Add(tab.Box);
         consoleBody.Controls.Add(requestsView = BuildRequestsView());
         host.Controls.Add(consoleBody);
@@ -230,39 +232,40 @@ sealed class MainForm : Form
         return host;
     }
 
-    FlatButton ConsoleButton(string text, string glyph, Action action)
+    FlatButton ConsoleButton(string text, Action action, bool stops = false)
     {
-        var button = new DarkButton(text, glyph);
+        var button = new DarkButton(text, stops);
         button.Click += (s, e) => action();
         return button;
     }
 
-    /// <summary>A small button on the dark console bar.</summary>
+    /// <summary>A word on the dark console bar that does something; the one that stops a process is red.</summary>
     sealed class DarkButton : FlatButton
     {
-        public DarkButton(string text, string glyph) : base(text, Look.Ghost, glyph)
+        readonly bool stops;
+
+        public DarkButton(string text, bool stops) : base(text)
         {
-            Margin = new Padding(0, 0, Theme.S(2), 0);
-            Height = Theme.S(30);
+            this.stops = stops;
+            Margin = Padding.Empty;
             Font = Theme.Small;
-            Size = new Size(GetPreferredSize(Size.Empty).Width, Theme.S(30));
+            Size = new Size(TextRenderer.MeasureText(text, Theme.Small).Width + Theme.S(16), Theme.S(30));
         }
+
+        public override Size GetPreferredSize(Size proposed) =>
+            new Size(TextRenderer.MeasureText(Text, Theme.Small).Width + Theme.S(16), Theme.S(30));
 
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
-            var hot = ClientRectangle.Contains(PointToClient(Cursor.Position));
-            var back = hot && Enabled ? Color.FromArgb(63, 63, 70) : Theme.ConsoleBar;
+            var hot = Enabled && ClientRectangle.Contains(PointToClient(Cursor.Position));
+            var back = hot ? Color.FromArgb(50, 55, 58) : Theme.ConsoleBar;
             g.Clear(back);
-            var fore = Enabled ? Color.FromArgb(212, 212, 216) : Color.FromArgb(100, 100, 108);
-            var flags = TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.SingleLine;
-            int x = Theme.S(6);
-            if (Theme.HasIcons)
-            {
-                TextRenderer.DrawText(g, Icon, Theme.Icon, new Rectangle(x, 1, Theme.S(18), Height), fore, back, flags);
-                x += Theme.S(20);
-            }
-            TextRenderer.DrawText(g, Text, Font, new Rectangle(x, 0, Width - x, Height), fore, back, flags);
+            var fore = !Enabled ? Color.FromArgb(88, 94, 91) : stops ? Theme.ConsoleBad : Theme.ConsoleText;
+            TextRenderer.DrawText(g, Text, Font, ClientRectangle, fore, back, TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter |
+                                  TextFormatFlags.HorizontalCenter | TextFormatFlags.SingleLine);
+            if (Focused && ShowFocusCues)
+                ControlPaint.DrawFocusRectangle(g, Rectangle.Inflate(ClientRectangle, -Theme.S(2), -Theme.S(4)), fore, back);
         }
     }
 
@@ -272,7 +275,7 @@ sealed class MainForm : Form
         if (currentPage == page) return;
         currentPage = page;
         foreach (var p in pages) p.Visible = p == page;
-        for (int i = 0; i < pages.Count; i++) navButtons[i].Selected = pages[i] == page;
+        for (int i = 0; i < pages.Count; i++) rail[i].Selected = pages[i] == page;
         page.Showing();
         page.StatusChanged();
     }
@@ -316,8 +319,8 @@ sealed class MainForm : Form
             using (var back = new SolidBrush(Theme.ConsoleBar)) e.Graphics.FillRectangle(back, e.Bounds);
             var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis |
                         (e.Header.TextAlign == HorizontalAlignment.Right ? TextFormatFlags.Right : TextFormatFlags.Left);
-            TextRenderer.DrawText(e.Graphics, e.Header.Text, Theme.SmallBold, Rectangle.Inflate(e.Bounds, -Theme.S(4), 0),
-                                  Color.FromArgb(161, 161, 170), flags);
+            TextRenderer.DrawText(e.Graphics, e.Header.Text, Theme.Small, Rectangle.Inflate(e.Bounds, -Theme.S(4), 0),
+                                  Theme.ConsoleDim, flags);
         };
         view.DrawItem += (s, e) => e.DrawDefault = true;
         view.DrawSubItem += (s, e) => e.DrawDefault = true;
@@ -336,7 +339,7 @@ sealed class MainForm : Form
             foreach (var r in Enumerable.Reverse(Requests).Take(300))
                 requestsView.Items.Add(new ListViewItem(RequestCells(r))
                 {
-                    ForeColor = r.Status == "ok" ? Theme.ConsoleText : Color.FromArgb(252, 129, 129),
+                    ForeColor = r.Status == "ok" ? Theme.ConsoleText : Theme.ConsoleBad,
                 });
         }
         finally
@@ -347,8 +350,9 @@ sealed class MainForm : Form
         UpdateRequestsDot();
     }
 
+    /// <summary>The white lamp (information) of the Requests tab: a request arrived in the last 15 s.</summary>
     void UpdateRequestsDot() =>
-        requestsButton.Dot = (DateTime.Now - lastRequestAt).TotalSeconds < 15 ? Color.FromArgb(96, 165, 250) : Color.Empty;
+        requestsButton.Dot = (DateTime.Now - lastRequestAt).TotalSeconds < 15 ? Theme.LampInfo : Color.Empty;
 
     static string[] RequestCells(RequestRow r)
     {
@@ -379,9 +383,9 @@ sealed class MainForm : Form
         {
             var task = consoles[kv.Key].Task;
             kv.Value.Dot = task == null ? Color.Empty
-                : !task.Done ? Color.FromArgb(74, 222, 128)
+                : !task.Done ? Theme.LampGo
                 : task.Killed ? Color.Empty
-                : task.ExitCode != 0 ? Color.FromArgb(248, 113, 113) : Color.Empty;
+                : task.ExitCode != 0 ? Theme.LampStop : Color.Empty;
         }
         bool running = !requestsShown && activeConsole.Running;
         btnInterrupt.Enabled = running;
@@ -567,7 +571,7 @@ sealed class MainForm : Form
 
     public void RefreshStatus()
     {
-        UpdateCards();
+        UpdateRail();
         UpdateConsoleBar();
         currentPage?.StatusChanged();
     }
@@ -576,26 +580,29 @@ sealed class MainForm : Form
     public string ServerOwner => IsRunning(ConsoleKind.Session) ? "session" : IsRunning(ConsoleKind.Server) ? "panel"
                                : Server.Up ? "outside" : "none";
 
-    void UpdateCards()
+    /// <summary>The state lines and lamps of the rail.</summary>
+    void UpdateRail()
     {
-        // server
+        // server: green = answering, amber blinking = starting, off = off
         var owner = ServerOwner;
         if (Server.Up)
         {
             var where = Server.Lan == true ? "rete e questo PC" : Server.Lan == false ? "solo questo PC" : "";
-            var parts = new List<string> { where, Format.Count(Server.Served, "richiesta", "richieste") };
-            if (Server.Backend != "mock" && Server.Served > 0) parts.Add($"tipico {Format.Seconds(Server.TypicalS)}");
-            if (owner == "outside") parts.Add("avviato fuori dall'app");
-            if (owner == "session") parts.Add("sessione di misura");
-            cardServer.Set(Theme.Green, Server.Describe(), string.Join(" · ", parts.Where(p => p.Length > 0)));
+            var notes = new List<string>();
+            if (Server.Backend != "mock" && Server.Served > 0) notes.Add($"tipico {Format.Seconds(Server.TypicalS)}");
+            if (owner == "outside") notes.Add("avviato fuori dall'app");
+            if (owner == "session") notes.Add("sessione di misura");
+            Show(railServer, Theme.LampGo, false, Server.Describe(),
+                 string.Join(", ", new[] { where, Format.Count(Server.Served, "richiesta", "richieste") }.Where(p => p.Length > 0)),
+                 string.Join(", ", notes));
         }
         else if (owner == "panel" || owner == "session")
         {
             var task = TaskOf(owner == "panel" ? ConsoleKind.Server : ConsoleKind.Session);
-            cardServer.Set(Theme.Amber, $"Avvio in corso… {Format.Duration(task.Elapsed)}",
-                           ServerPage.LoadsModel ? "caricamento del modello" : "");
+            Show(railServer, Theme.LampAmber, Theme.Blinks, $"in avvio da {Format.Duration(task.Elapsed)}",
+                 ServerPage.LoadsModel ? "caricamento del modello" : "");
         }
-        else cardServer.Set(Theme.Gray, "Spento", "");
+        else Show(railServer, Color.Empty, false, "spento");
 
         // headset
         var h = Headset;
@@ -603,62 +610,91 @@ sealed class MainForm : Form
         {
             case "device":
                 var detail = new List<string>();
-                if (h.BatteryLevel.HasValue) detail.Add($"batteria {h.BatteryLevel}%" + (h.Charging ? " (in carica)" : ""));
+                if (h.BatteryLevel.HasValue) detail.Add($"batteria {h.BatteryLevel}%" + (h.Charging ? " in carica" : ""));
                 if (h.Installed == false) detail.Add("app non installata");
                 else if (h.Running == true) detail.Add("app aperta");
-                else if (h.Installed == true) detail.Add("app installata");
-                cardHeadset.Set(Theme.Green, (string.IsNullOrEmpty(h.Model) ? "Quest" : h.Model) + " collegato (cavo USB)",
-                                string.Join(" · ", detail));
+                else if (h.Installed == true) detail.Add("app chiusa");
+                Show(railHeadset, Theme.LampGo, false, (string.IsNullOrEmpty(h.Model) ? "Quest" : h.Model) + " col cavo USB",
+                     string.Join(", ", detail));
                 break;
             case "unauthorized":
-                cardHeadset.Set(Theme.Amber, "Da autorizzare", "Nel visore accetta «Consenti debug USB»");
+                Show(railHeadset, Theme.LampAmber, false, "da autorizzare", "nel visore: «Consenti debug USB»");
                 break;
             case "offline":
-                cardHeadset.Set(Theme.Amber, "Offline", "Scollega e ricollega il cavo");
+                Show(railHeadset, Theme.LampAmber, false, "offline", "scollega e ricollega il cavo");
                 break;
             case "noadb":
-                cardHeadset.Set(Theme.Red, "adb non trovato", "Serve il modulo Android Build Support di Unity");
+                Show(railHeadset, Theme.LampStop, false, "adb non trovato", "serve Android Build Support");
                 break;
             case "starting":
-                cardHeadset.Set(Theme.Gray, "Controllo…", "");
+                Show(railHeadset, Color.Empty, false, "controllo…");
                 break;
             case "error":
-                cardHeadset.Set(Theme.Amber, "adb non risponde", "");
+                Show(railHeadset, Theme.LampAmber, false, "adb non risponde");
                 break;
             default:
-                var recent = (DateTime.Now - LastWifiRequest).TotalMinutes < 10;
-                cardHeadset.Set(recent ? Theme.Accent : Theme.Gray, "Cavo non collegato",
-                                recent ? $"Wi-Fi: ultima richiesta {Format.Ago(LastWifiRequest)} da {LastWifiClient}" : "");
+                // no cable: lit if it asked for meshes over Wi-Fi in the last 10 minutes
+                if ((DateTime.Now - LastWifiRequest).TotalMinutes < 10)
+                    Show(railHeadset, Theme.LampGo, false, $"Wi-Fi, {LastWifiClient}", $"ultima richiesta {Format.Ago(LastWifiRequest)}");
+                else Show(railHeadset, Color.Empty, false, "cavo non collegato");
                 break;
         }
 
-        // this PC
-        var pcParts = new List<string>();
-        if (Pc.HasGpu) pcParts.Add($"{Pc.GpuName} · {Pc.GpuUsedMb}/{Pc.GpuTotalMb} MB · {Pc.GpuUtil}%");
-        if (!Repo.HasVenv) pcParts.Insert(0, "manca .venv: Strumenti > Prepara questo PC");
+        // the measured sessions saved
+        if ((DateTime.Now - sessionsCheckedAt).TotalSeconds >= 10) SessionsChanged();
+        var newest = sessions.OrderByDescending(name => name, StringComparer.Ordinal).FirstOrDefault();
+        Show(railResults, Color.Empty, false, sessions.Length == 0 ? "nessuna sessione" : Format.Count(sessions.Length, "sessione", "sessioni"),
+             newest != null && DateTime.TryParseExact(newest.Length >= 15 ? newest.Substring(0, 15) : newest, "yyyyMMdd_HHmmss",
+                                                      CultureInfo.InvariantCulture, DateTimeStyles.None, out var last)
+                 ? $"ultima {last:dd/MM HH:mm}" : "");
+
+        // this PC: red = no Python environment, amber = no local network
         var ip = Pc.Addresses.FirstOrDefault();
-        cardPc.Set(Repo.HasVenv ? (ip != null ? Theme.Green : Theme.Amber) : Theme.Red,
-                   ip != null ? $"IP {ip}" + (Pc.Addresses.Count > 1 ? $" (+{Pc.Addresses.Count - 1})" : "") : "Nessuna rete locale",
-                   string.Join(" · ", pcParts));
+        var gpu = Pc.HasGpu ? $"{Pc.GpuName.Replace("GeForce ", "")}, {Pc.GpuUsedMb}/{Pc.GpuTotalMb} MB, {Pc.GpuUtil}%" : "";
+        Show(railTools, Repo.HasVenv ? (ip != null ? Theme.LampGo : Theme.LampAmber) : Theme.LampStop, false,
+             ip != null ? $"IP {ip}" + (Pc.Addresses.Count > 1 ? $" (+{Pc.Addresses.Count - 1})" : "") : "nessuna rete locale",
+             Repo.HasVenv ? gpu : "manca .venv: Prepara questo PC");
+    }
+
+    void Show(RailEntry entry, Color lamp, bool blink, params string[] lines)
+    {
+        if (entry.Set(lamp, blink, lines)) railTips.SetToolTip(entry, entry.StateText);
+    }
+
+    /// <summary>Reads again the folders of the measured sessions (the Results entry of the rail counts them).</summary>
+    public void SessionsChanged()
+    {
+        sessionsCheckedAt = DateTime.Now;
+        try
+        {
+            sessions = Directory.Exists(Repo.QuestResults)
+                ? Directory.GetDirectories(Repo.QuestResults).Select(Path.GetFileName).ToArray() : new string[0];
+        }
+        catch (Exception)
+        {
+            // the folder is being written: next time
+        }
     }
 
     // ------------------------------------------------------------------ lifetime
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
-        int distance = Settings.GetInt("splitter", 0);
+        // the console's height is what is remembered, not the splitter's position, which moves with the layout above
+        int console = Settings.GetInt("console", 0);
+        if (console < Theme.S(120) || split.Height - split.SplitterWidth - console < Theme.S(300)) console = Theme.S(200);
         try
         {
-            split.SplitterDistance = distance > Theme.S(260) && distance < split.Height - Theme.S(120)
-                ? distance : Math.Max(Theme.S(380), split.Height - Theme.S(200));
+            split.SplitterDistance = Math.Max(Theme.S(260), split.Height - split.SplitterWidth - console);
         }
         catch (Exception)
         {
-            // window too small for the remembered position
+            // window too small for it
         }
         Monitors.Start();
         flushTimer.Start();
         clockTimer.Start();
+        blinkTimer.Start();
         if (snapshotDir != null) TakeSnapshots();
     }
 
@@ -699,7 +735,7 @@ sealed class MainForm : Form
         }
         foreach (var c in running) c.Task.Kill();
         Settings.Set("page", pages.IndexOf(currentPage));
-        if (WindowState == FormWindowState.Normal) Settings.Set("splitter", split.SplitterDistance);
+        if (WindowState == FormWindowState.Normal) Settings.Set("console", split.Panel2.Height);
         if (snapshotDir == null)
         {
             ServerPage.SaveSettings();
@@ -716,7 +752,8 @@ sealed class MainForm : Form
     }
 
     // ------------------------------------------------------------------ snapshots (development aid)
-    /// <summary>EdgeControl.exe --snapshot DIR: one PNG per page (the window as it is on the screen), then exit.</summary>
+    /// <summary>EdgeControl.exe --snapshot DIR: one PNG per page (the window as it is on the screen), the Server page
+    /// with its advanced options open and the requests list, then exit (nothing is saved in the settings).</summary>
     async void TakeSnapshots()
     {
         TopMost = true;
@@ -725,15 +762,23 @@ sealed class MainForm : Form
                                              $"{ConsoleTab.Ok}Esempio: finito (13 s)\n");
         await System.Threading.Tasks.Task.Delay(4000);
         Directory.CreateDirectory(snapshotDir);
-        for (int i = 0; i < pages.Count; i++)
+        async System.Threading.Tasks.Task Shot(string name)
         {
-            ShowPage(pages[i]);
             await System.Threading.Tasks.Task.Delay(700);
             var bounds = Bounds;
             using var bitmap = new Bitmap(bounds.Width, bounds.Height);
             using (var g = Graphics.FromImage(bitmap)) g.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
-            bitmap.Save(Path.Combine(snapshotDir, $"{i + 1}_{pages[i].NavText}.png"), ImageFormat.Png);
+            bitmap.Save(Path.Combine(snapshotDir, name + ".png"), ImageFormat.Png);
         }
+        for (int i = 0; i < pages.Count; i++)
+        {
+            ShowPage(pages[i]);
+            await Shot($"{i + 1}_{pages[i].NavText}");
+        }
+        ShowPage(ServerPage);
+        ServerPage.ToggleAdvanced(true);
+        ShowRequests();
+        await Shot("5_Opzioni_e_richieste");
         Close();
     }
 }

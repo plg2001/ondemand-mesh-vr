@@ -12,7 +12,6 @@ namespace EdgeControl;
 sealed class ResultsPage : Page
 {
     public override string NavText => "Risultati";
-    public override string NavGlyph => Glyph.Results;
 
     SmoothListView list;
     RichTextBox preview;
@@ -28,28 +27,31 @@ sealed class ResultsPage : Page
             list.Columns.Add(title, Theme.S(width));
         list.SelectedIndexChanged += (s, e) => ShowSelected();
         list.DoubleClick += (s, e) => { if (Selected != null) Shell.Open(Selected); };
+        // the preview is a text box with a white margin of its own, inside the same thin frame as the list
         preview = new RichTextBox
         {
-            Dock = DockStyle.Fill, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = Color.White, Font = Theme.Mono,
+            Dock = DockStyle.Fill, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = Theme.Sheet, Font = Theme.Mono,
             WordWrap = false, DetectUrls = false, ScrollBars = RichTextBoxScrollBars.Both,
         };
-        var listCard = new Card { Padding = Theme.P(6), Dock = DockStyle.Fill, Margin = Theme.P(0, 0, 10, 0) };
-        listCard.Controls.Add(list);
-        var previewCard = new Card { Padding = Theme.P(12, 10, 6, 6), Dock = DockStyle.Fill, Margin = Theme.P(0, 0, 10, 0) };
-        previewCard.Controls.Add(preview);
+        var previewHost = new Panel { BackColor = Theme.Sheet, Padding = Theme.P(10, 8, 0, 0) };
+        previewHost.Controls.Add(preview);
+        var listFrame = Make.Framed(list);
+        listFrame.Margin = Theme.P(0, 0, 12, 0);
+        var previewFrame = Make.Framed(previewHost);
+        previewFrame.Margin = Theme.P(0, 0, 10, 0);
         var body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent, Margin = Padding.Empty };
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Theme.S(540)));
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         body.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        body.Controls.Add(listCard, 0, 0);
-        body.Controls.Add(previewCard, 1, 0);
+        body.Controls.Add(listFrame, 0, 0);
+        body.Controls.Add(previewFrame, 1, 0);
 
-        btnFolder = new FlatButton("Apri la cartella", Look.Secondary, Glyph.Folder);
-        btnSummary = new FlatButton("Apri summary.md", Look.Secondary, Glyph.Document);
-        btnRegenerate = new FlatButton("Rigenera il riassunto", Look.Secondary, Glyph.Refresh);
-        btnPull = new FlatButton("Copia i CSV dal visore", Look.Secondary, Glyph.Download);
-        var btnAll = new FlatButton("Tutte le sessioni", Look.Ghost, Glyph.Folder);
-        var btnReload = new FlatButton("Aggiorna", Look.Ghost, Glyph.Refresh);
+        btnFolder = new FlatButton("Apri la cartella");
+        btnSummary = new FlatButton("Apri summary.md");
+        btnRegenerate = new FlatButton("Rigenera il riassunto");
+        btnPull = new FlatButton("Copia i CSV dal visore");
+        var btnAll = new FlatButton("Tutte le sessioni", Look.Link);
+        var btnReload = new FlatButton("Aggiorna");
         btnFolder.Click += (s, e) => { if (Selected != null) Shell.Open(Selected); };
         btnSummary.Click += (s, e) => { if (Selected != null) Shell.Open(Path.Combine(Selected, "summary.md")); };
         btnRegenerate.Click += (s, e) => Regenerate();
@@ -60,14 +62,15 @@ sealed class ResultsPage : Page
             Shell.Open(App.Repo.QuestResults);
         };
         btnReload.Click += (s, e) => Reload(Selected);
-        var actions = Make.Row(btnFolder, btnSummary, btnRegenerate, btnPull, btnAll, btnReload);
+        // what acts on the selected session, then what does not
+        btnRegenerate.Margin = new Padding(0, 0, Theme.S(24), Theme.S(6));
+        var actions = Make.Row(btnFolder, btnSummary, btnRegenerate, btnPull, btnReload, btnAll);
         actions.Margin = new Padding(0, Theme.S(10), 0, 0);
 
         var root = Make.Column(
-            (Header("Risultati"), 0),
             (body, 100),
             (actions, 0));
-        Install(root, 900, 300);
+        Install(root, 900, 280);
     }
 
     string Selected => list.SelectedItems.Count > 0 ? list.SelectedItems[0].Tag as string : null;
@@ -111,6 +114,7 @@ sealed class ResultsPage : Page
         }
         if (list.SelectedItems.Count > 0) list.SelectedItems[0].EnsureVisible();
         ShowSelected();
+        App.SessionsChanged();
     }
 
     /// <summary>What the server reconstructed with, from session.json.</summary>
@@ -154,8 +158,8 @@ sealed class ResultsPage : Page
         foreach (var line in File.ReadAllLines(summary))
         {
             var heading = line.StartsWith("#");
-            preview.SelectionFont = heading ? new Font(Theme.Mono, FontStyle.Bold) : Theme.Mono;
-            preview.SelectionColor = heading ? Theme.Accent : Theme.Text;
+            preview.SelectionFont = heading ? Theme.MonoBold : Theme.Mono;
+            preview.SelectionColor = Theme.Ink;
             preview.AppendText(line.Replace("**", "") + "\n");
         }
         preview.Select(0, 0);

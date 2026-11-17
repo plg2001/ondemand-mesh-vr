@@ -446,9 +446,11 @@ clic e si sceglie cosa fare. Non va installato (usa il .NET Framework 4.8 che c'
 terminali: esegue gli stessi script del progetto (`python -m edge.server`, `tools/quest/quest.py`, `tools/setup_pc.py`)
 e ne mostra l'output nella console in basso.
 
-- **In alto, sempre visibili**: il server (spento, in avvio, acceso: cosa ricostruisce, se è raggiungibile dalla rete,
-  quante richieste), il visore (collegato via cavo, da autorizzare, batteria, app aperta; senza cavo, l'ultima richiesta
-  arrivata via Wi-Fi) e questo PC (indirizzo in rete, memoria e uso della GPU). Un clic apre la pagina corrispondente.
+- **A sinistra, sempre visibili**: le quattro pagine, ognuna con il suo stato e una spia (verde = acceso o collegato,
+  ambra lampeggiante = in avvio, rossa = guasto, grigia = spento): il server (cosa ricostruisce, se è raggiungibile dalla
+  rete, quante richieste), il visore (collegato via cavo, da autorizzare, batteria, app aperta; senza cavo, l'ultima
+  richiesta arrivata via Wi-Fi), le sessioni salvate (quante, l'ultima) e, sotto Strumenti, questo PC (indirizzo in
+  rete, memoria e uso della GPU). I pulsanti verdi avviano qualcosa, i rossi lo fermano.
 - **Server**: (1) chi lo usa: *Simulatore Unity su questo PC* (`python -m edge.server`, risponde solo a questo PC),
   *Quest via Wi-Fi* (`quest.py wifi --serve`: scrive l'indirizzo sul visore se è collegato col cavo e avvia il server
   raggiungibile dalla rete; si può scegliere l'IP se il PC ne ha più d'uno), *Quest via cavo USB* (`quest.py usb
@@ -473,7 +475,7 @@ e ne mostra l'output nella console in basso.
   requisiti, stato della GPU) e scorciatoie (cartella, README, stato del progetto, API del server, log del server,
   progetto Unity).
 - **Console**: una scheda per il server, una con le **richieste** ricevute dal server (ora, oggetto, esito, tempo,
-  triangoli, F-score, da dove), una per la sessione, una per il log del visore e una per gli altri comandi; il pallino
+  triangoli, F-score, da dove), una per la sessione, una per il log del visore e una per gli altri comandi; la spia
   verde indica cosa è in corso. «Interrompi» ferma il processo e tutto quello che ha avviato. Nella riga in basso si
   risponde al processo in corso o, se non ce n'è, si scrive un comando qualsiasi, eseguito nella cartella del progetto
   con la `.venv` attiva (frecce su/giù: comandi precedenti).
@@ -488,7 +490,7 @@ e ne mostra l'output nella console in basso.
 | `tools\quest\server_usb.bat`, `server_wifi.bat` | Server: Quest via cavo USB / via Wi-Fi, Avvia server |
 | `tools\quest\server_wifi_model.bat` | Server: Quest via Wi-Fi, Modello generativo, Solo questi, Avvia server |
 | `tools\quest\session_usb.bat`, `session_wifi.bat` | Server: Sessione di misura, poi Termina e salva |
-| `tools\quest\check_headset.bat` | Visore: Controllo completo (lo stato essenziale è sempre in alto) |
+| `tools\quest\check_headset.bat` | Visore: Controllo completo (lo stato essenziale è sempre a sinistra) |
 | `tools\quest\install_app.bat` | Visore: Installa e avvia |
 | `tools\quest\show_logs.bat` | Visore: Log Unity dal vivo |
 | `tools\quest\pull_results.bat` | Visore o Risultati: Copia i CSV |
@@ -497,7 +499,9 @@ e ne mostra l'output nella console in basso.
 Sorgenti in `tools/control/src/*.cs` (C# per il .NET Framework 4.8, Windows Forms). Dopo una modifica
 `python tools/control/build.py` ricompila `EdgeControl.exe` in pochi secondi, con il compilatore C# del .NET SDK o con
 quello dentro Unity; `tests/test_control_app.py` controlla che l'exe corrisponda ai sorgenti e che le opzioni che passa
-esistano davvero negli script. `EdgeControl.exe --snapshot <cartella>` salva un'immagine di ogni pagina ed esce.
+esistano davvero negli script. `EdgeControl.exe --snapshot <cartella>` salva un'immagine di ogni pagina (più le opzioni
+avanzate e l'elenco delle richieste) ed esce; `EdgeControl.exe --icon tools\control\EdgeControl.ico` ridisegna l'icona
+dal disegno del marchio nei sorgenti.
 
 ## Note e limiti noti
 
