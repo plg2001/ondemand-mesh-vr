@@ -56,6 +56,9 @@ sealed class Repo
     {
         ["box"] = "scatola", ["sphere"] = "sfera", ["bunny"] = "coniglio", ["tmg_cat"] = "gatto",
         ["fastmesh_001"] = "pupazzo", ["mav2_wand"] = "bacchetta",
+        ["kenney_chairRounded"] = "sedia", ["kenney_chair"] = "sedia", ["kenney_table"] = "tavolo",
+        ["kenney_bookcaseOpen"] = "libreria", ["kenney_lampSquareFloor"] = "lampada", ["kenney_bench"] = "panca",
+        ["kenney_loungeSofa"] = "divano", ["kenney_computerScreen"] = "monitor",
     };
 
     /// <summary>The objects of the scene the app on the headset shows (its scene.json in StreamingAssets), else the

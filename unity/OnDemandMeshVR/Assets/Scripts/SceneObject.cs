@@ -4,16 +4,18 @@ using UnityEngine;
 using Debug = UnityEngine.Debug;
 
 /// <summary>
-/// One object of a point-cloud scene: it owns the object's sparse cloud (local frame), draws it as points while
-/// there is no mesh, and shows the mesh once the edge has reconstructed it. Created at runtime by
-/// PointCloudScene. In the Scene view (and in the Game view with Gizmos on) its bounding box tells the state:
-/// grey = points, out of view; cyan = in view, waiting; yellow = request running; green = mesh; red = failed,
-/// will be retried; magenta = failed, not retried (the server gave up on it or refused it).
+/// One object of a point-cloud scene: it owns the object's sparse cloud (local frame) and, if the scene has one, its
+/// sketch (a PNG, MeshPad-style drawing); while there is no mesh it shows one of the two as placeholder, points or a
+/// card with the drawing (UseSketch, decided by PointCloudScene from what the server takes), sends that same one to
+/// the edge, and shows the mesh once the edge has reconstructed it. Created at runtime by PointCloudScene. In the
+/// Scene view (and in the Game view with Gizmos on) its bounding box tells the state: grey = placeholder, out of
+/// view; cyan = in view, waiting; yellow = request running; green = mesh; red = failed, will be retried;
+/// magenta = failed, not retried (the server gave up on it or refused it).
 /// </summary>
 [RequireComponent(typeof(RuntimeMeshLoader))]
 public class SceneObject : MonoBehaviour
 {
-    public enum State { PointsOnly, Requesting, MeshReady, Failed }
+    public enum State { PointsOnly, Requesting, MeshReady, Failed }  // PointsOnly = no mesh: the placeholder is shown
 
     /// <summary>Why the last request failed: decides whether, and when, the object is asked for again.</summary>
     public enum Failure
@@ -43,12 +45,20 @@ public class SceneObject : MonoBehaviour
     }
 
     float[] _pointsGltf;          // exactly what is stored and sent: glTF frame, object's local frame
+    byte[] _sketchPng;            // the sketch file as stored and sent with format=sketch; null if the scene has none
     RuntimeMeshLoader _loader;
     PointCloudRenderer _points;
+    SketchCard _sketch;           // null if there is no sketch
+    bool _useSketch;              // placeholder shown and representation sent: the sketch (if any) or the points
     ObjectLabel _label;           // null when labels are off
     byte[] _cachedGlb;            // last mesh received, kept only if the scene caches meshes
 
     public MeshInfo Info { get; private set; }
+
+    public bool HasSketch => _sketchPng != null && _sketch != null;
+    /// <summary>The object shows its sketch and sends it (format=sketch) instead of its points.</summary>
+    public bool UsesSketch => _useSketch && HasSketch;
+    public int SketchBytes => _sketchPng?.Length ?? 0;
 
     /// <summary>The cloud in Unity's frame, local to this object.</summary>
     public Vector3[] LocalPoints { get; private set; }
@@ -77,8 +87,8 @@ public class SceneObject : MonoBehaviour
     /// <summary>The server serves only some objects (--objects, HTTP 409): expected, not an error.</summary>
     public bool NotServedByChoice { get; private set; }
 
-    public void Init(SceneObjectEntry entry, float[] pointsGltf, Material meshMaterial, Material pointMaterial,
-                     float pointSize, Color pointColor, bool showLabel)
+    public void Init(SceneObjectEntry entry, float[] pointsGltf, byte[] sketchPng, Material meshMaterial,
+                     Material pointMaterial, float pointSize, Color pointColor, bool showLabel)
     {
         objectId = entry.id;
         shape = entry.shape;
@@ -97,18 +107,55 @@ public class SceneObject : MonoBehaviour
         pointsGo.transform.SetParent(transform, false);
         _points = pointsGo.AddComponent<PointCloudRenderer>();
         _points.Show(LocalPoints, pointMaterial, pointSize, pointColor);
+        if (sketchPng != null)
+        {
+            _sketch = SketchCard.Create(transform, sketchPng, entry.sketch_radius > 0f ? entry.sketch_radius : 0.5f,
+                                        objectId);
+            if (_sketch != null)
+                _sketchPng = sketchPng;
+        }
+        ShowPlaceholder();
         if (showLabel)
             _label = ObjectLabel.Create(transform, WorldBounds);
     }
 
-    /// <summary>Sends the cloud to the edge and shows the mesh that comes back. Returns the timings, or null.</summary>
+    /// <summary>Show and send the sketch (true; only if the object has one) or the points (false).</summary>
+    public void UseSketch(bool sketch)
+    {
+        _useSketch = sketch;
+        if (state != State.MeshReady)
+            ShowPlaceholder();
+    }
+
+    void ShowPlaceholder()
+    {
+        if (_points != null)
+            _points.Visible = !UsesSketch;
+        if (_sketch != null)
+            _sketch.Visible = UsesSketch;
+    }
+
+    void HidePlaceholder()
+    {
+        if (_points != null)
+            _points.Visible = false;
+        if (_sketch != null)
+            _sketch.Visible = false;
+    }
+
+    /// <summary>Drops the kept .glb: it was made from the other representation, or by another model.</summary>
+    public void ForgetCachedMesh() => _cachedGlb = null;
+
+    /// <summary>Sends the cloud, or the sketch, to the edge and shows the mesh that comes back. Returns the timings, or null.</summary>
     public async Task<EdgeTimingLog.Row?> ReconstructAsync(EdgeClient client, string source, bool keepGlb)
     {
         state = State.Requesting;
         var total = Stopwatch.StartNew();
-        var body = PointCloudIO.ToBytes(_pointsGltf);
+        var sketch = UsesSketch;
+        var body = sketch ? _sketchPng : PointCloudIO.ToBytes(_pointsGltf);
         var prepareMs = total.Elapsed.TotalMilliseconds;
-        var response = await client.ReconstructAsync(body, objectId);
+        var response = await (sketch ? client.ReconstructSketchAsync(body, objectId)
+                                     : client.ReconstructAsync(body, objectId));
         if (this == null)  // Play mode stopped while waiting
             return null;
         if (!response.Ok)
@@ -116,7 +163,8 @@ public class SceneObject : MonoBehaviour
             SetFailed(Classify(response), response.Error);
             NotServedByChoice = response.StatusCode == 409;
             if (NotServedByChoice)
-                Debug.Log($"[SceneObject] {objectId}: not served by this server, stays as points ({response.Error})");
+                Debug.Log($"[SceneObject] {objectId}: not served by this server, stays as " +
+                          $"{(sketch ? "a sketch" : "points")} ({response.Error})");
             else
                 Debug.LogError($"[SceneObject] {objectId}: {response.Error} ({LastFailure}" +
                                $"{(WillRetry ? "" : ", not retried")})");
@@ -142,8 +190,9 @@ public class SceneObject : MonoBehaviour
         ShowMesh(false);
         if (keepGlb)
             _cachedGlb = response.Glb;
-        return EdgeTimingLog.From(objectId, source, PointCount, response, _loader.LastTriangles, _loader.LastLoadMs,
-                                  prepareMs, total.Elapsed.TotalMilliseconds);
+        // points_sent 0 = a sketch was sent (its bytes are in bytes_up)
+        return EdgeTimingLog.From(objectId, source, sketch ? 0 : PointCount, response, _loader.LastTriangles,
+                                  _loader.LastLoadMs, prepareMs, total.Elapsed.TotalMilliseconds);
     }
 
     /// <summary>Shows the mesh received earlier again, without asking the edge.</summary>
@@ -194,13 +243,12 @@ public class SceneObject : MonoBehaviour
         return Failure.Transient;  // other 5xx, 408 / 429, or no status at all
     }
 
-    /// <summary>Back to points: the mesh is destroyed and its memory freed (the glb cache, if any, is kept).</summary>
+    /// <summary>Back to the placeholder: the mesh is destroyed and its memory freed (the glb cache, if any, is kept).</summary>
     public void RemoveMesh()
     {
         _loader.Clear();
         state = State.PointsOnly;
-        if (_points != null)
-            _points.Visible = true;
+        ShowPlaceholder();
         if (_label != null)
             _label.Hide();
     }
@@ -208,8 +256,7 @@ public class SceneObject : MonoBehaviour
     void ShowMesh(bool fromCache)
     {
         state = State.MeshReady;
-        if (_points != null)
-            _points.Visible = false;
+        HidePlaceholder();
         if (_label != null)
             _label.Show(LabelText(fromCache));
     }

@@ -14,6 +14,26 @@
       "dir": "third_party/FastMesh",
       "url": "https://github.com/jhkim0759/FastMesh.git",
       "commit": "8e971227e48db7f277f1c30359a4d823b1a7009c"
+    },
+    "meshpad": {
+      "dir": "third_party/MeshPad",
+      "url": "https://github.com/DerKleineLi/meshpad-release.git",
+      "commit": "c27ca976644b67e5928aabde7fe1b9c20643f773"
+    },
+    "fms": {
+      "dir": "third_party/foundation-model-stack",
+      "url": "https://github.com/foundation-model-stack/foundation-model-stack.git",
+      "commit": "32cfc08b10df92a71d401350e1d1700e1df3193d"
+    },
+    "fms_extras": {
+      "dir": "third_party/fms-extras",
+      "url": "https://github.com/DerKleineLi/fms-extras.git",
+      "commit": "45e71eca774d2201aea3f5827e844a61e55fa313"
+    },
+    "radio": {
+      "dir": "third_party/RADIO",
+      "url": "https://github.com/NVlabs/RADIO.git",
+      "commit": "8fc297c0f4bf21f8210d70759c35cca4a0bd6a74"
     }
   },
   "weights": {
@@ -49,6 +69,30 @@
       "revision": "1af8fd50a41fe7b75baa104721a38e2a3d51d35e",
       "bytes": 4378026292,
       "sha256": "39d028169a519cd0e5a568847be0ca6bc55ab6de4d8a08aa78c5affb9c855988"
+    },
+    "meshpad/addition/addition.pth": {
+      "source": "gdrive://1wLK6kvgcXQof8dQXm4KVEJb2op9bhTxc",
+      "path": "checkpoints/meshpad/addition/addition.pth",
+      "bytes": 1946720326,
+      "sha256": "3fb84f7b40cf0af3d9509b3d900d48b48119560573636ccf9a97babbf837bc21"
+    },
+    "meshpad/addition/args.yaml": {
+      "source": "gdrive://1ffEswu6GWwYQw5YSy1m5beSjTgLF-IHU",
+      "path": "checkpoints/meshpad/addition/args.yaml",
+      "bytes": 668,
+      "sha256": "02a20cca5e44a94df8828cf256b522c5b2599e37c2bb67df4a8fb94770fc3cae"
+    },
+    "meshpad/addition/speculator.pth": {
+      "source": "gdrive://1XKmjkAaEY3mbHZ1anD0MjcfQQkCXVod0",
+      "path": "checkpoints/meshpad/addition/speculator.pth",
+      "bytes": 71487676,
+      "sha256": "a2939afc9b86bdc3c6cfb545dbe74385127837c448771d31e160e7538379f39e"
+    },
+    "radio_v2.5-h": {
+      "source": "https://huggingface.co/nvidia/RADIO/resolve/main/radio_v2.5-h.pth.tar",
+      "path": "checkpoints/torch/hub/checkpoints/radio_v2.5-h.pth.tar",
+      "bytes": 2282135786,
+      "sha256": "167ca9a324bb5a58292d73b947a2699211f89a60d64502dda0410677e1637247"
     }
   }
 }

@@ -31,6 +31,21 @@ public static class PointCloudIO
         return request.downloadHandler.text;
     }
 
+    /// <summary>Reads a binary file (e.g. a sketch .png) from StreamingAssets, inside the .apk on Android too.</summary>
+    public static async Task<byte[]> ReadStreamingAssetBytesAsync(string relativePath)
+    {
+        var path = Path.Combine(Application.streamingAssetsPath, relativePath).Replace('\\', '/');
+        if (!path.Contains("://"))
+            return File.ReadAllBytes(path);
+        using var request = UnityWebRequest.Get(path);
+        var op = request.SendWebRequest();
+        while (!op.isDone)
+            await Task.Yield();
+        if (request.result != UnityWebRequest.Result.Success)
+            throw new IOException($"{path}: {request.error}");
+        return request.downloadHandler.data;
+    }
+
     /// <summary>Parses .xyz text ("x y z" per line) into a flat array [x0, y0, z0, x1, ...].</summary>
     public static float[] ParseXyz(string text)
     {

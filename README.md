@@ -13,6 +13,10 @@ Ricostruzione **on-demand** di mesh 3D da point cloud sparse per visori VR stand
 **Fase 2, prototipo on demand** (sezione 8): server Edge, app Unity per il Quest 2 che chiede la mesh di un oggetto
 quando entra nel campo visivo, strumenti per misurare le sessioni sul visore.
 
+**Fase 3, dagli schizzi 2D** (sezione 9, dal 18 novembre 2026): [MeshPad](https://derkleineli.github.io/meshpad/), un
+modello autoregressivo che genera la mesh da uno schizzo (un'immagine dei bordi dell'oggetto), integrato come gli altri
+modelli e nel server Edge. Il lavoro delle fasi 1 e 2 è archiviato sul disco esterno (`docs/stato_progetto.md`, sezione 0).
+
 Documentazione:
 - [`docs/stato_progetto.md`](docs/stato_progetto.md): **da leggere per primo**. Dove siamo, cosa è stato misurato, cosa non è verificato, cosa resta da fare.
 - [`docs/requisiti_calcolo.md`](docs/requisiti_calcolo.md): analisi di VRAM/RAM, banda, FLOPs ed energia, e incompatibilità con ARM64/Horizon OS.
@@ -46,6 +50,7 @@ Documentazione:
 models/                     wrapper dei modelli (NON è un package Python: vedi nota sotto)
   setup_models.py           clona i repo ufficiali a commit fissati + scarica i pesi (lock: upstream.lock.json)
   test_inference.py         CLI di inferenza / profiling (modalità real | mock | auto)
+  test_meshpad.py           MeshPad sugli schizzi: tempi, memoria, accuratezza (sezione 9)
   specs/*.yaml              iperparametri architetturali (letti dai sorgenti ufficiali) per mock e stimatore
   mesh_wrappers/            wrapper per modello, shim FlashAttention-2→SDPA, I/O point cloud, export mesh
 data/inputs/                generate_pointclouds.py → nuvole .ply/.xyz/.npy da 100 a 8192 punti + manifest.json
@@ -66,6 +71,8 @@ tests/                      test unitari (pytest)
 third_party/, checkpoints/  codice e pesi upstream (scaricati, non versionati)
                             checkpoints/huggingface/  = pesi MeshAnything V2, FastMesh, OPT (cache HF spostata qui)
                             checkpoints/treemeshgpt/  = pesi TreeMeshGPT (Google Drive)
+                            checkpoints/meshpad/      = pesi MeshPad (Google Drive degli autori)
+                            checkpoints/torch/        = cache di torch.hub (RADIO v2.5-H, l'encoder di MeshPad)
 ```
 
 > `models/` non contiene `__init__.py` di proposito: FastMesh ha un package top-level chiamato `models`,
@@ -125,6 +132,7 @@ python models/setup_models.py                  # repo + pesi di default: MA V2, 
 python models/setup_models.py --skip-weights   # solo codice (basta per la modalità mock)
 python models/setup_models.py --models fastmesh --fastmesh-variants V4K
 python models/setup_models.py --models treemeshgpt --tmg-variants 9bit
+python models/setup_models.py --models meshpad # MeshPad: 4 repo e 4,1 GB di pesi (sezione 9)
 ```
 
 | Modello | Pesi | Dimensione | Licenza |
@@ -132,6 +140,7 @@ python models/setup_models.py --models treemeshgpt --tmg-variants 9bit
 | MeshAnything V2 | HF `Yiwen-ntu/meshanythingv2` | 2.0 GB | S-Lab 1.0 (non commerciale) |
 | FastMesh V1K / V4K | HF `WopperSet/FastMesh-V1K` / `-V4K` | 4.4 GB ciascuno | S-Lab 1.0 (non commerciale) |
 | TreeMeshGPT 7bit / 9bit | Google Drive (gdown) | 5.0 GB (7bit) | MIT |
+| MeshPad (aggiunta + speculatore) | Google Drive degli autori, più RADIO v2.5-H da HF `nvidia/RADIO` | 1,9 + 2,2 GB | Automotive Development Public Non-Commercial 1.0 (MeshPad) |
 
 Se gdown fallisce per la quota di Google Drive, scarica a mano il file indicato nel messaggio di errore e
 salvalo in `checkpoints/treemeshgpt/`.
@@ -502,6 +511,65 @@ quello dentro Unity; `tests/test_control_app.py` controlla che l'exe corrisponda
 esistano davvero negli script. `EdgeControl.exe --snapshot <cartella>` salva un'immagine di ogni pagina (più le opzioni
 avanzate e l'elenco delle richieste) ed esce; `EdgeControl.exe --icon tools\control\EdgeControl.ico` ridisegna l'icona
 dal disegno del marchio nei sorgenti.
+
+## 9. MeshPad: dallo schizzo alla mesh
+
+[MeshPad](https://derkleineli.github.io/meshpad/) (TU Monaco con AUDI, ICCV 2025) genera una mesh "da artista" da uno
+schizzo: un'immagine 224×224 con i bordi dell'oggetto in nero su bianco. È fatto di un encoder d'immagine (RADIO v2.5-H
+di NVIDIA, 652 milioni di parametri), dello stesso decoder autoregressivo di MeshAnything V2 (OPT-350M) e di uno
+*speculatore* che, insieme alla prima coordinata di ogni vertice, indovina le altre due. Analisi in
+`docs/stato_progetto.md`, sezione 0.1; risultati nella sezione 0.2.
+
+```powershell
+python models/setup_models.py --models meshpad      # codice (4 repo ai commit fissati) e pesi: 4,1 GB
+python models/test_meshpad.py                       # i sei oggetti della scena, sulla GPU se c'è
+python models/test_meshpad.py --shapes box tmg_cat --seeds 0 1 2 --time-budget-s 120
+python models/test_meshpad.py --images schizzo.png  # un'immagine qualsiasi: tratti scuri su fondo chiaro
+python -m edge.server --backend model --model meshpad --time-budget-s 120
+```
+
+- **Schizzi**: `models/mesh_wrappers/sketch.py` li disegna come gli autori (Canny sulle immagini di profondità e di
+  normali della mesh; vista di default azimut 45°, elevazione 30°), con il ray casting di Open3D al posto di OpenGL.
+  Un PNG in bianco e nero pesa 1-2 KB.
+- **Su questo PC** (GT 1030 da 2 GB, di cui circa 0,8 occupati da Windows e dalle app): il decoder va sulla GPU in fp16
+  (circa 0,7 GB); RADIO resta sulla CPU (`--encoder-device auto`: CPU se la GPU ha meno di 6 GB), salvato in fp16 e
+  calcolato in fp32 un blocco alla volta. Il modello si costruisce "vuoto" e si riempie direttamente da
+  `addition.pth`: il caricamento dura pochi secondi.
+- **La generazione è campionata** come nella demo degli autori (top-k 10, top-p 0,8, temperatura 0,5): semi diversi
+  danno mesh diverse (`--seeds`); `--greedy` per una decodifica deterministica.
+- **Accuratezza**: rispetto alla nuvola densa della mesh originale, sia com'è uscita sia dopo la rotazione migliore
+  attorno all'asse verticale (MeshPad decide da solo il "davanti" di un oggetto). Risultati in
+  `benchmarks/results/meshpad_<data>/summary.md`, con gli schizzi e le mesh `.glb`.
+- **Server**: `POST /reconstruct?format=sketch` con il PNG nel corpo; la mesh torna nel sistema locale dell'oggetto
+  (riquadro centrato, lato più lungo 1, +Y in alto). Il backend mock risponde con un cubo unitario, per provare il
+  protocollo senza modello. Se una sequenza campionata non si decodifica, il server riprova con il seme successivo
+  (fino a 3 volte, entro `--time-budget-s`).
+- **Ambiente**: MeshPad richiede transformers 4.47 (prima 4.43). È aggiornato in `requirements.txt` e verificato con i
+  test e con la modalità mock degli altri tre modelli. flash-attn non serve (stesso shim SDPA).
+
+### 9.1 MeshPad sul visore
+
+La scena di prova (`data/scenes/demo_room.yaml`) dal 18 novembre ha sei oggetti adatti a MeshPad: la scatola davanti e
+cinque mobili low-poly del Furniture Pack di Kenney (licenza CC0, in `data/models/kenney_furniture/`): sedia, tavolo,
+libreria, lampada da terra, panca. `build_scene.py` scrive per ogni oggetto, oltre alla nuvola, lo **schizzo**
+(`<id>_sketch.png`, 0,5-1,6 KB) e lo copia nell'app. Nell'app ogni oggetto senza mesh mostra il suo schizzo su un
+cartoncino bianco grande quanto l'oggetto, girato verso chi guarda; quando entra in vista l'app manda il PNG al server
+(`format=sketch`) e sostituisce il cartoncino con la mesh. Sceglie da sola cosa mandare: il server dice in `/health` se
+prende schizzi (MeshPad), punti (gli altri modelli, i metodi classici) o tutti e due (il mock, che agli schizzi risponde
+con un cubo). Il pannello nel visore mostra `input sketch` o `input points`; nell'Inspector, `PointCloudScene` →
+**Input** (Auto, Points, Sketch) lo forza.
+
+1. **Server**: EdgeControl, pagina Server, «Quest via Wi-Fi» (o via cavo), modello **MeshPad**, limite di tempo 120 s,
+   poi Avvia (oppure «Sessione di misura» per registrare tutto). Da terminale:
+   `python tools\quest\quest.py wifi --serve --server-args "--backend model --model meshpad --time-budget-s 120"`.
+   Il server si avvia in circa 16 s.
+2. **App**: va ricostruita una volta (nuova scena e nuovo codice): in Unity **Tools → Quest → Prepare and build APK**,
+   oppure, con l'editor chiuso, da terminale:
+   `& "C:\Program Files\Unity\Hub\Editor\6000.3.26f1\Editor\Unity.exe" -batchmode -quit -projectPath unity\OnDemandMeshVR -buildTarget Android -executeMethod QuestBuild.BuildFromCommandLine -logFile build.log`.
+   Poi EdgeControl, pagina Visore, «Installa e avvia».
+3. **Nel visore**: la scatola davanti arriva in circa 7 s; poi, girandosi, un oggetto alla volta (sulla GT 1030 circa
+   10-30 s l'uno: lampada la più veloce, libreria la più lenta). Le mesh restano in memoria: tornando a guardare un
+   oggetto, ricompare subito.
 
 ## Note e limiti noti
 

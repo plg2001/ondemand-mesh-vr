@@ -31,6 +31,11 @@ sys.path.insert(0, str(ROOT / "models"))
 from mesh_wrappers.pointcloud import save_pointcloud, storage_bytes  # noqa: E402
 
 TP = ROOT / "third_party"
+KENNEY = ROOT / "data" / "models" / "kenney_furniture"  # Kenney Furniture Pack 1.0, CC0 (License.txt there)
+# Low-poly furniture of ShapeNet's categories (60-320 triangles, +Y up): in-distribution for MeshPad, whose released
+# weights are trained on ShapeNet only. Key "kenney_<file name>".
+KENNEY_MODELS = ["chair", "chairRounded", "loungeSofa", "bench", "bedSingle", "bookcaseOpen", "table", "tableRound",
+                 "desk", "lampSquareFloor", "computerScreen", "laptop", "trashcan", "kitchenMicrowave"]
 SOURCES = {
     # primitives: analytic, offline, known topology
     "box": ("primitive", lambda: trimesh.creation.box(extents=(1.0, 0.6, 0.4))),
@@ -47,6 +52,7 @@ SOURCES = {
     "tmg_pig": ("file", TP / "TreeMeshGPT" / "demo" / "objaverse_pig.obj"),
     "mav2_wand": ("file", TP / "MeshAnythingV2" / "examples" / "wand.obj"),
     "fastmesh_001": ("file", TP / "FastMesh" / "assets" / "001.obj"),
+    **{f"kenney_{name}": ("file", KENNEY / f"{name}.obj") for name in KENNEY_MODELS},
 }
 DEFAULT_SHAPES = ["bunny", "box", "sphere", "tmg_cat", "mav2_wand", "fastmesh_001"]
 DEFAULT_COUNTS = [100, 500, 2048, 8192]

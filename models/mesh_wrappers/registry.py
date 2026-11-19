@@ -7,6 +7,7 @@ _REGISTRY = {
     "meshanything": ("meshanything_v2", "MeshAnythingV2Wrapper"),
     "fastmesh": ("fastmesh", "FastMeshWrapper"),
     "treemeshgpt": ("treemeshgpt", "TreeMeshGPTWrapper"),
+    "meshpad": ("meshpad", "MeshPadWrapper"),  # sketch image -> mesh (input_kind = "sketch")
 }
 ALIASES = {"meshanythingv2": "meshanything", "mav2": "meshanything", "tmg": "treemeshgpt"}
 MODEL_NAMES = tuple(_REGISTRY)

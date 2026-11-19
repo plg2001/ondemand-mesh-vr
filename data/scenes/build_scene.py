@@ -10,10 +10,14 @@ rebuilds an object's mesh when it is needed.
     python data/scenes/build_scene.py --no-unity               # do not copy into the Unity project
 
 Output in data/scenes/<name>/ (git-ignored, rebuildable):
-    scene.json      objects (id, shape, points file, pose, local bounds, source mesh size) + scene totals
+    scene.json      objects (id, shape, points file, sketch file, pose, local bounds, source mesh size) + scene totals
     <id>.xyz        sparse cloud of the object in its LOCAL frame: what the headset stores and sends
+    <id>_sketch.png the object drawn as MeshPad draws its sketches (models/mesh_wrappers/sketch.py): the other
+                    representation the headset can keep and send (format=sketch), 224x224, about 1-2 KB
     <id>_ref.npy    dense reference cloud (xyz + normals), local frame, for quality metrics
-scene.json and the .xyz files are also copied to unity/OnDemandMeshVR/Assets/StreamingAssets/Scenes/<name>/.
+scene.json, the .xyz and the _sketch.png files are also copied to unity/OnDemandMeshVR/Assets/StreamingAssets/Scenes/<name>/.
+The sketch view is the YAML's sketch_azimuth / sketch_elevation (scene-wide or per object; default 45 / 30, MeshPad's
+demo), in the object's local frame.
 
 Frames: glTF convention (right-handed, +Y up, metres). An object's points live in its local frame (the shape
 canonicalised: bounding box centred on the origin, longest side 1); position / rotation / scale place it in the
@@ -39,6 +43,7 @@ sys.path.insert(0, str(ROOT / "data" / "inputs"))
 sys.path.insert(0, str(ROOT / "models"))
 from generate_pointclouds import SOURCES, canonicalise, load_source, sample  # noqa: E402
 from mesh_wrappers.pointcloud import save_pointcloud, storage_bytes  # noqa: E402
+from mesh_wrappers.sketch import DEFAULT_AZIMUTH, DEFAULT_ELEVATION, render_sketch, sketch_to_png  # noqa: E402
 
 DEFAULT_CONFIG = HERE / "demo_room.yaml"
 UNITY_SCENES = ROOT / "unity" / "OnDemandMeshVR" / "Assets" / "StreamingAssets" / "Scenes"
@@ -80,8 +85,10 @@ def build_scene(config: dict, out_dir: Path, unity_dir: Optional[Path] = None,
 
     out_dir.mkdir(parents=True, exist_ok=True)
     cache: dict[str, tuple] = {}  # the same shape can be placed several times
-    entries, totals = [], {"objects": 0, "points": 0, "bytes_xyz_f32": 0, "source_vertices": 0,
-                           "source_triangles": 0, "source_mesh_bytes": 0}
+    entries, totals = [], {"objects": 0, "points": 0, "bytes_xyz_f32": 0, "bytes_sketch_png": 0,
+                           "source_vertices": 0, "source_triangles": 0, "source_mesh_bytes": 0}
+    scene_azimuth = float(config.get("sketch_azimuth", DEFAULT_AZIMUTH))
+    scene_elevation = float(config.get("sketch_elevation", DEFAULT_ELEVATION))
     for i, obj in enumerate(objects):
         shape = obj.get("shape")
         if shape not in SOURCES:
@@ -96,6 +103,10 @@ def build_scene(config: dict, out_dir: Path, unity_dir: Optional[Path] = None,
         ref, ref_n = sample(mesh, ref_points, seed + 7919 * i + 999)
         save_pointcloud(out_dir / f"{obj['id']}.xyz", pts)  # coordinates only: the headset's sparse storage
         np.save(out_dir / f"{obj['id']}_ref.npy", np.concatenate([ref, ref_n], 1))
+        azimuth = float(obj.get("sketch_azimuth", scene_azimuth))
+        elevation = float(obj.get("sketch_elevation", scene_elevation))
+        png = sketch_to_png(render_sketch(mesh.vertices, mesh.faces, azimuth, elevation))
+        (out_dir / f"{obj['id']}_sketch.png").write_bytes(png)
 
         bmin, bmax = mesh.vertices.min(0), mesh.vertices.max(0)
         position, rotation, scale = object_pose(obj, bmin, bmax)
@@ -103,6 +114,11 @@ def build_scene(config: dict, out_dir: Path, unity_dir: Optional[Path] = None,
         entries.append({
             "id": obj["id"], "shape": shape, "points": f"{obj['id']}.xyz", "reference": f"{obj['id']}_ref.npy",
             "point_count": n, "bytes_xyz_f32": storage_bytes(n),
+            "sketch": f"{obj['id']}_sketch.png", "bytes_sketch_png": len(png),
+            "sketch_azimuth": azimuth, "sketch_elevation": elevation,
+            # the sketch is drawn with the object scaled so that its farthest vertex is at 0.5 (MeshPad's
+            # render_sketch): the headset needs it to show the drawing at the object's real size
+            "sketch_radius": round(float(np.linalg.norm(mesh.vertices, axis=1).max()), 6),
             "position": position, "rotation": rotation, "scale": scale,
             "local_bounds_min": [round(float(v), 6) for v in bmin],
             "local_bounds_max": [round(float(v), 6) for v in bmax],
@@ -111,6 +127,7 @@ def build_scene(config: dict, out_dir: Path, unity_dir: Optional[Path] = None,
         totals["objects"] += 1
         totals["points"] += n
         totals["bytes_xyz_f32"] += storage_bytes(n)
+        totals["bytes_sketch_png"] += len(png)
         totals["source_vertices"] += n_vertices
         totals["source_triangles"] += n_faces
         totals["source_mesh_bytes"] += mesh_bytes
@@ -124,7 +141,8 @@ def build_scene(config: dict, out_dir: Path, unity_dir: Optional[Path] = None,
         copy_to_unity(scene, out_dir, unity_dir)
     if verbose:
         kb = totals["bytes_xyz_f32"] / 1024
-        print(f"scene '{name}': {totals['objects']} objects, {totals['points']} points = {kb:.1f} KB as float32 "
+        print(f"scene '{name}': {totals['objects']} objects, {totals['points']} points = {kb:.1f} KB as float32, "
+              f"sketches {totals['bytes_sketch_png'] / 1024:.1f} KB as PNG "
               f"(original meshes: {totals['source_triangles']} triangles, "
               f"{totals['source_mesh_bytes'] / 1024:.0f} KB)")
         print(f"written to {out_dir}" + (f" and {unity_dir}" if unity_dir else ""))
@@ -132,17 +150,18 @@ def build_scene(config: dict, out_dir: Path, unity_dir: Optional[Path] = None,
 
 
 def copy_to_unity(scene: dict, out_dir: Path, unity_dir: Path) -> None:
-    """Copy what the headset needs (scene.json + sparse clouds); drop clouds of objects no longer in the scene."""
+    """Copy what the headset needs (scene.json, sparse clouds, sketches); drop the files of objects no longer in the
+    scene (with their Unity .meta)."""
     unity_dir.mkdir(parents=True, exist_ok=True)
-    keep = {e["points"] for e in scene["objects"]}
-    for old in unity_dir.glob("*.xyz"):
+    keep = {e["points"] for e in scene["objects"]} | {e["sketch"] for e in scene["objects"] if e.get("sketch")}
+    for old in [*unity_dir.glob("*.xyz"), *unity_dir.glob("*_sketch.png")]:
         if old.name not in keep:
             old.unlink()
             meta = old.with_name(old.name + ".meta")
             if meta.exists():
                 meta.unlink()
-    for e in scene["objects"]:
-        shutil.copy2(out_dir / e["points"], unity_dir / e["points"])
+    for name in sorted(keep):
+        shutil.copy2(out_dir / name, unity_dir / name)
     shutil.copy2(out_dir / "scene.json", unity_dir / "scene.json")
 
 

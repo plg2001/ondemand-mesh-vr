@@ -118,6 +118,42 @@ def test_reconstruct_bad_body_is_400(client):
     assert r.status_code == 400 and "multiple of 12" in r.json()["detail"]
 
 
+def _png(strokes) -> bytes:
+    from mesh_wrappers.sketch import sketch_to_png
+
+    return sketch_to_png(strokes)
+
+
+def test_sketch_format_with_the_mock_gives_a_unit_box(client):
+    strokes = np.zeros((224, 224), bool)
+    strokes[50:60, 50:150] = True
+    r = client.post("/reconstruct?format=sketch&object_id=box", content=_png(strokes),
+                    headers={"Content-Type": "image/png"})
+    assert r.status_code == 200 and r.content[:4] == b"glTF"
+    assert int(r.headers["X-Points-In"]) == 0
+    np.testing.assert_allclose(load_glb(r.content).extents, [1.0, 1.0, 1.0], atol=1e-6)  # the object's local frame
+    assert client.get("/health").json()["input"] == "both"
+
+
+@pytest.mark.parametrize("body,msg", [(b"", "empty"), (b"not an image", "not an image"),
+                                      ("blank", "blank")])
+def test_sketch_format_rejects_bad_images(client, body, msg):
+    if body == "blank":
+        body = _png(np.zeros((224, 224), bool))
+    r = client.post("/reconstruct?format=sketch", content=body)
+    assert r.status_code == 400 and msg in r.json()["detail"]
+
+
+def test_classical_backend_refuses_sketches():
+    from edge.reconstruction import ClassicalBackend, ReconstructionError
+
+    backend = ClassicalBackend.__new__(ClassicalBackend)  # no Open3D warm-up needed for this
+    backend.label = "Ball Pivoting"
+    with pytest.raises(ReconstructionError) as e:
+        backend.reconstruct_sketch(np.ones((224, 224), bool))
+    assert e.value.status_code == 400
+
+
 def test_stored_shapes(client):
     assert client.get("/shapes").json() == {"shapes": {"box": [256]}}
     pts = client.get("/shapes/box/points?points=256")

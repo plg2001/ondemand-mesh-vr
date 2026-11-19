@@ -83,6 +83,7 @@ public class EdgeClient
         public string label = "";  // model name to show, e.g. "MeshAnything V2" or "convex-hull"
         public float typical_s;    // median server time of the last meshes (mock: its delay); 0 = no idea yet
         public float budget_s;     // the server gives up on a mesh after this many seconds; 0 = never
+        public string input = "";  // what the backend takes: "points", "sketch" (MeshPad) or "both" (mock); "" = older server: points
     }
 
     /// <summary>GET /health with a short timeout. Returns (reachable, "backend/model" or the error, the answer).</summary>
@@ -123,6 +124,19 @@ public class EdgeClient
             downloadHandler = new DownloadHandlerBuffer()
         };
         return SendAsync(request, xyzFloat32.Length);
+    }
+
+    /// <summary>POST /reconstruct?format=sketch: the headset sends the object's sketch, a PNG (MeshPad; the mock answers
+    /// a unit box). The mesh comes back in the object's local frame, like the meshes made from points.</summary>
+    public Task<Response> ReconstructSketchAsync(byte[] png, string objectId)
+    {
+        var url = $"{BaseUrl}/reconstruct?format=sketch&object_id={UnityWebRequest.EscapeURL(objectId)}";
+        var request = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST)
+        {
+            uploadHandler = new UploadHandlerRaw(png) { contentType = "image/png" },
+            downloadHandler = new DownloadHandlerBuffer()
+        };
+        return SendAsync(request, png.Length);
     }
 
     async Task<Response> SendAsync(UnityWebRequest request, int bytesUp)

@@ -4,9 +4,17 @@
     python models/setup_models.py --skip-weights       # only clone the code (enough for mock mode)
     python models/setup_models.py --models treemeshgpt --tmg-variants 7bit 9bit
     python models/setup_models.py --fastmesh-variants V1K V4K
+    python models/setup_models.py --models meshpad     # MeshPad (sketch -> mesh): 4 repos, ~4.2 GB of weights
 
 Upstream sources are never modified: compatibility is handled at runtime (models/mesh_wrappers).
 Pinned commits and weight hashes live in models/upstream.lock.json.
+
+MeshPad needs, besides its own code: MeshAnythingV2 (same commit as above, imported as meshanything_train), IBM's
+foundation-model-stack and the authors' fork of fms-extras (its speculator, at the commits MeshPad's submodules
+record) and NVIDIA's RADIO (its image encoder, normally fetched by torch.hub from the latest main: pinned here
+instead). Weights: the addition network + speculator from the authors' Google Drive (the deletion network is only
+for interactive editing and is not downloaded) and RADIO v2.5-H from Hugging Face, where torch.hub looks for it
+(checkpoints/torch/hub/checkpoints).
 """
 from __future__ import annotations
 
@@ -24,6 +32,16 @@ REPOS = {
     "meshanything": ("MeshAnythingV2", "https://github.com/buaacyw/MeshAnythingV2.git"),
     "fastmesh": ("FastMesh", "https://github.com/jhkim0759/FastMesh.git"),
     "treemeshgpt": ("TreeMeshGPT", "https://github.com/sail-sg/TreeMeshGPT.git"),
+    "meshpad": ("MeshPad", "https://github.com/DerKleineLi/meshpad-release.git"),
+    "fms": ("foundation-model-stack", "https://github.com/foundation-model-stack/foundation-model-stack.git"),
+    "fms_extras": ("fms-extras", "https://github.com/DerKleineLi/fms-extras.git"),
+    "radio": ("RADIO", "https://github.com/NVlabs/RADIO.git"),
+}
+MODEL_REPOS = {  # --models choice -> repositories it needs
+    "meshanything": ["meshanything"],
+    "fastmesh": ["fastmesh"],
+    "treemeshgpt": ["treemeshgpt"],
+    "meshpad": ["meshpad", "meshanything", "fms", "fms_extras", "radio"],
 }
 HF_WEIGHTS = {
     "meshanything": [("Yiwen-ntu/meshanythingv2", ["config.json", "model.safetensors"]),
@@ -31,8 +49,14 @@ HF_WEIGHTS = {
     "fastmesh:V1K": [("WopperSet/FastMesh-V1K", ["config.json", "model.safetensors"]),
                      ("facebook/opt-350m", ["config.json"])],
     "fastmesh:V4K": [("WopperSet/FastMesh-V4K", ["config.json", "model.safetensors"])],
+    "meshpad": [("facebook/opt-350m", ["config.json"])],  # MeshPad's OPT configuration (args.llm)
 }
 TMG_GDRIVE = {"7bit": "1IERM76szBQq9oAMoFw1Sbgp3kx97_Kib", "9bit": "19Auv48x7kgoODRS7dij8QijWzDqRjq97"}
+# MeshPad-Checkpoints/pretrained/addition on the authors' Google Drive (the README's "Weights" link)
+MESHPAD_GDRIVE = {"addition.pth": "1wLK6kvgcXQof8dQXm4KVEJb2op9bhTxc",
+                  "args.yaml": "1ffEswu6GWwYQw5YSy1m5beSjTgLF-IHU",
+                  "speculator.pth": "1XKmjkAaEY3mbHZ1anD0MjcfQQkCXVod0"}
+RADIO_URL = "https://huggingface.co/nvidia/RADIO/resolve/main/radio_v2.5-h.pth.tar"  # RESOURCE_MAP["radio_v2.5-h"]
 
 
 def git(*args, cwd=None) -> str:
@@ -122,9 +146,52 @@ def download_tmg(variant: str, lock: dict) -> None:
     print(f"[ok]    {dest} ({dest.stat().st_size / 2**30:.2f} GB)")
 
 
+def _record(name: str, source: str, dest: Path, lock: dict) -> None:
+    sha = sha256_file(dest)
+    _check_hash(name, lock["weights"].get(name, {}), sha)
+    lock["weights"][name] = {"source": source, "path": dest.relative_to(CHECKPOINTS.parent).as_posix(),
+                             "bytes": dest.stat().st_size, "sha256": sha}
+    print(f"[ok]    {dest} ({dest.stat().st_size / 2**20:.1f} MB)")
+
+
+def download_meshpad(lock: dict) -> None:
+    import gdown
+
+    folder = CHECKPOINTS / "meshpad" / "addition"
+    folder.mkdir(parents=True, exist_ok=True)
+    for fname, file_id in MESHPAD_GDRIVE.items():
+        dest = folder / fname
+        if not dest.exists():
+            print(f"[gdrive] meshpad/addition/{fname}")
+            out = gdown.download(id=file_id, output=str(dest) + ".part", quiet=False)
+            if out is None:
+                raise SystemExit(f"Google Drive download failed (quota?). Download manually from "
+                                 f"https://drive.google.com/uc?id={file_id} and save it as {dest}")
+            shutil.move(out, dest)
+        _record(f"meshpad/addition/{fname}", f"gdrive://{file_id}", dest, lock)
+
+    dest = CHECKPOINTS / "torch" / "hub" / "checkpoints" / "radio_v2.5-h.pth.tar"  # where torch.hub looks
+    if not dest.exists():
+        import urllib.request
+
+        print(f"[http]  {RADIO_URL}")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        part = dest.with_name(dest.name + ".part")
+        with urllib.request.urlopen(RADIO_URL) as r, open(part, "wb") as f:
+            total, done, step = int(r.headers.get("Content-Length", 0)), 0, 0
+            while block := r.read(1 << 22):
+                f.write(block)
+                done += len(block)
+                if total and done * 10 // total > step:
+                    step = done * 10 // total
+                    print(f"        {done / 2**30:.2f} / {total / 2**30:.2f} GB", flush=True)
+        part.replace(dest)
+    _record("radio_v2.5-h", RADIO_URL, dest, lock)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--models", nargs="+", default=list(REPOS), choices=list(REPOS))
+    ap.add_argument("--models", nargs="+", default=list(MODEL_REPOS), choices=list(MODEL_REPOS))
     ap.add_argument("--skip-weights", action="store_true")
     ap.add_argument("--update", action="store_true", help="move repos to latest upstream HEAD and re-pin")
     ap.add_argument("--tmg-variants", nargs="+", default=["7bit"], choices=list(TMG_GDRIVE))
@@ -135,7 +202,7 @@ def main() -> None:
     lock = load_lock()
     lock.setdefault("repos", {})
     lock.setdefault("weights", {})
-    for key in args.models:
+    for key in dict.fromkeys(r for m in args.models for r in MODEL_REPOS[m]):  # each repository once, in order
         setup_repo(key, lock, args.update)
     save_lock(lock)
     if args.skip_weights:
@@ -146,6 +213,9 @@ def main() -> None:
         elif key == "fastmesh":
             for v in args.fastmesh_variants:
                 download_hf(f"fastmesh:{v}", lock, args.update)
+        elif key == "meshpad":
+            download_hf("meshpad", lock, args.update)
+            download_meshpad(lock)
         else:
             for v in args.tmg_variants:
                 download_tmg(v, lock)

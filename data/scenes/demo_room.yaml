@@ -11,47 +11,57 @@
 #   rotation_y_deg rotation around the vertical axis (or rotation_deg: [x, y, z])
 #   size           longest side of the object, in metres
 #   points         optional, overrides points_per_object
+#   sketch_azimuth / sketch_elevation   optional, the view of the object's sketch (default: the scene's)
+#
+# Since 18 Nov 2026 the objects are low-poly furniture (Kenney Furniture Pack, CC0) of ShapeNet's categories, which
+# MeshPad's released weights know, plus the box. The point-cloud scene before (bunny, cat, puppet, sphere, wand) is in
+# the archive on D: and in git history.
 
 name: demo_room
 points_per_object: 2048
 reference_points: 20000
 seed: 0
+sketch_azimuth: 45      # MeshPad's demo view (models/mesh_wrappers/sketch.py)
+sketch_elevation: 30
 
 objects:
-# The six objects stand in a circle around the player (one every 60 degrees, about 2.2 m away, each turned towards the
-# centre): turning around, one object at a time enters the view. The box, the fastest to reconstruct (MeshAnything V2
-# on the GT 1030: ~70 s), is the one in front, at table height (y = 0.8), so it is the first one asked for.
+# Six objects in a circle around the player (one every 60 degrees, about 2.2 m away, each turned towards the centre):
+# turning around, one object at a time enters the view. The box, the fastest to reconstruct (MeshPad on the GT 1030:
+# 5-7 s), is the one in front, at table height (y = 0.8), so it is the first one asked for. MeshPad times on the
+# GT 1030 (one sample each, benchmarks/results/meshpad_*): chair 25 s, table 19 s, bookcase 30 s, lamp 9 s, bench 20 s.
+# The chair's and the bench's backrests are on their +Z side: rotation_y_deg = atan2(x, z) turns their seats to the
+# centre.
   - id: box_01                 # 0 degrees: in front
     shape: box
     position: [0.0, 0.8, 1.8]
     rotation_y_deg: 20
     size: 0.8
 
-  - id: bunny_01               # 60 degrees
-    shape: bunny
+  - id: chair_01               # 60 degrees
+    shape: kenney_chairRounded
     position: [1.9, 0.0, 1.1]
-    rotation_y_deg: 240
-    size: 0.5
+    rotation_y_deg: 60
+    size: 0.9
 
-  - id: cat_01                 # 120 degrees
-    shape: tmg_cat
+  - id: table_01               # 120 degrees
+    shape: kenney_table
     position: [1.9, 0.0, -1.1]
-    rotation_y_deg: 300
-    size: 0.6
+    rotation_y_deg: 120
+    size: 1.4
 
-  - id: puppet_01              # 180 degrees: behind
-    shape: fastmesh_001
+  - id: bookcase_01            # 180 degrees: behind
+    shape: kenney_bookcaseOpen
     position: [0.0, 0.0, -2.2]
-    rotation_y_deg: 0
-    size: 0.7
+    rotation_y_deg: 180
+    size: 1.8
 
-  - id: sphere_01              # 240 degrees
-    shape: sphere
+  - id: lamp_01                # 240 degrees
+    shape: kenney_lampSquareFloor
     position: [-1.9, 0.0, -1.1]
-    size: 0.5
+    size: 1.6
 
-  - id: wand_01                # 300 degrees
-    shape: mav2_wand
+  - id: bench_01               # 300 degrees
+    shape: kenney_bench
     position: [-1.9, 0.0, 1.1]
-    rotation_y_deg: 30
-    size: 1.0
+    rotation_y_deg: 300
+    size: 0.9

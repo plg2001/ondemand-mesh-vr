@@ -46,6 +46,7 @@ sealed class ServerPage : Page
 
     static readonly Choice[] Models =
     {
+        new Choice("meshpad", "MeshPad"),  // sketches: the app sends each object's drawing (format=sketch)
         new Choice("meshanything", "MeshAnything V2"), new Choice("fastmesh", "FastMesh"), new Choice("treemeshgpt", "TreeMeshGPT"),
     };
 

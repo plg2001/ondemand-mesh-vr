@@ -10,7 +10,8 @@ using Debug = UnityEngine.Debug;
 
 /// <summary>
 /// Loads a scene built by data/scenes/build_scene.py (StreamingAssets/Scenes/name/scene.json): one child
-/// GameObject per object, placed with its pose, drawing the object's sparse cloud as points.
+/// GameObject per object, placed with its pose, drawing the object's sparse cloud as points or, when the server takes
+/// sketches (MeshPad) and the scene has them, a card with the object's sketch (Input).
 ///
 /// Mode On Demand (default): every Check Interval the camera view is tested; objects in view that have no mesh are
 /// sent to the edge server, one at a time, the one closest to the centre of the view first (Queue Order), and their
@@ -41,6 +42,13 @@ public class PointCloudScene : MonoBehaviour
         Nearest        // the object closest to the user
     }
 
+    public enum InputMode
+    {
+        Auto,    // sketches when the server takes them (/health input: sketch or both) and the scene has them
+        Points,  // always the point clouds
+        Sketch   // always the sketches (objects without one use their points)
+    }
+
     const double MaxRetryPauseSeconds = 300;
 
     [Header("Scene")]
@@ -58,6 +66,12 @@ public class PointCloudScene : MonoBehaviour
     public float pointSize = 0.01f;
 
     public Color pointColor = new Color(0.25f, 0.8f, 1f);
+
+    [Header("Input")]
+    [Tooltip("What an object shows while it has no mesh, and sends to the edge: its points, or its sketch (a card with " +
+             "the drawing; format=sketch, for MeshPad). Auto = the sketch when the server takes sketches (/health input " +
+             "= sketch, MeshPad; or both, the mock) and the scene has one, the points otherwise")]
+    public InputMode input = InputMode.Auto;
 
     [Header("Edge server")]
     [Tooltip("127.0.0.1 = this PC (or the USB tunnel on the headset). A file edge_server.txt in " +
@@ -129,6 +143,7 @@ public class PointCloudScene : MonoBehaviour
     EdgeClient.Health _health;   // last /health answer: model, typical time, time budget
     bool _busy;                  // ReconstructAll running
     bool _loaded;
+    bool _sketchesInUse;         // what the objects currently show and send (see UseSketches)
     float _nextCheck;
     bool _cameraWarned;
 
@@ -146,6 +161,10 @@ public class PointCloudScene : MonoBehaviour
 
     public IReadOnlyList<SceneObject> Objects => _objects;
     public string EffectiveServerUrl => _client?.BaseUrl ?? serverUrl;
+
+    /// <summary>Objects show and send their sketch rather than their points (Input; Auto follows the server).</summary>
+    bool UseSketches => input == InputMode.Sketch ||
+                        (input == InputMode.Auto && _health != null && (_health.input == "sketch" || _health.input == "both"));
 
     void Awake()
     {
@@ -242,7 +261,7 @@ public class PointCloudScene : MonoBehaviour
                 Destroy(old.gameObject);
         _objects.Clear();
 
-        var total = 0;
+        int total = 0, sketchBytes = 0;
         foreach (var entry in _manifest.objects)
         {
             float[] cloud;
@@ -255,6 +274,17 @@ public class PointCloudScene : MonoBehaviour
                 Debug.LogError($"[PointCloudScene] {entry.id}: cannot read {entry.points}: {e.Message}");
                 continue;
             }
+            byte[] sketch = null;
+            if (!string.IsNullOrEmpty(entry.sketch))
+                try
+                {
+                    sketch = await PointCloudIO.ReadStreamingAssetBytesAsync($"{sceneFolder}/{entry.sketch}");
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[PointCloudScene] {entry.id}: cannot read {entry.sketch}: {e.Message} " +
+                                     "(the object uses its points)");
+                }
             if (this == null)
                 return false;
             var go = new GameObject(entry.id);
@@ -266,16 +296,40 @@ public class PointCloudScene : MonoBehaviour
                 : Quaternion.identity;
             go.transform.localScale = Vector3Of(entry.scale, Vector3.one);
             var obj = go.AddComponent<SceneObject>();
-            obj.Init(entry, cloud, meshMaterial, points, pointSize, pointColor, showObjectLabels);
+            obj.Init(entry, cloud, sketch, meshMaterial, points, pointSize, pointColor, showObjectLabels);
             _objects.Add(obj);
             total += obj.PointCount;
+            sketchBytes += obj.HasSketch ? obj.SketchBytes : 0;
         }
 
         var t = _manifest.totals;
         Debug.Log($"[PointCloudScene] '{_manifest.name}': {_objects.Count} objects, {total} points " +
-                  $"({total * 12 / 1024f:F1} KB as float32). The original meshes would be {t?.source_triangles} " +
+                  $"({total * 12 / 1024f:F1} KB as float32), {_objects.Count(o => o.HasSketch)} sketches " +
+                  $"({sketchBytes / 1024f:F1} KB as PNG). The original meshes would be {t?.source_triangles} " +
                   $"triangles (~{(t?.source_mesh_bytes ?? 0) / 1024f:F0} KB).");
+        ApplyInput(force: true);
         return _objects.Count > 0;
+    }
+
+    /// <summary>Tells every object whether to show and send its sketch or its points; called when the scene is loaded
+    /// and after every /health answer (the server, hence what it takes, can change while the app runs).</summary>
+    void ApplyInput(bool force = false)
+    {
+        var sketches = UseSketches;
+        if (!force && sketches == _sketchesInUse)
+            return;
+        var changed = sketches != _sketchesInUse;
+        _sketchesInUse = sketches;
+        foreach (var o in _objects)
+            if (o != null)
+            {
+                if (changed)
+                    o.ForgetCachedMesh();  // a mesh made from the other representation (or by another model)
+                o.UseSketch(sketches);
+            }
+        if (_objects.Count > 0)
+            Debug.Log($"[PointCloudScene] objects shown and sent as {(sketches ? "sketches" : "points")} " +
+                      $"(Input {input}, server input '{_health?.input}')");
     }
 
     Material ResolvePointMaterial()
@@ -336,7 +390,10 @@ public class PointCloudScene : MonoBehaviour
                 _serverInfo = info;
                 _healthFailures = 0;
                 if (health != null)
+                {
                     _health = health;
+                    ApplyInput();
+                }
             }
             else
             {
@@ -565,7 +622,7 @@ public class PointCloudScene : MonoBehaviour
     string StatusText()
     {
         var sb = new StringBuilder();
-        sb.Append($"<b>On-demand mesh</b>   {_fps:F0} fps   mode {mode}   " +
+        sb.Append($"<b>On-demand mesh</b>   {_fps:F0} fps   mode {mode}   input {(_sketchesInUse ? "sketch" : "points")}   " +
                   $"sticks {(_locomotionOff >= 0 ? "off" : "on")}\n");
         sb.Append(_serverOk
             ? $"Edge <color=#70ff70>OK</color> {EffectiveServerUrl} ({_serverInfo})\n"

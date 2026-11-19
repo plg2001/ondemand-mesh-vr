@@ -1,6 +1,6 @@
-"""FlashAttention-2 -> PyTorch SDPA compatibility shim (transformers 4.43.x).
+"""FlashAttention-2 -> PyTorch SDPA compatibility shim (written for transformers 4.43, verified with 4.47).
 
-MeshAnythingV2 and FastMesh hard-wire ``attn_implementation="flash_attention_2"``:
+MeshAnythingV2, FastMesh and MeshPad hard-wire ``attn_implementation="flash_attention_2"``:
 their custom OPT decoder raises ``ValueError`` for any other backend and FastMesh's
 FaceGen calls ``transformers.modeling_flash_attention_utils._flash_attention_forward``
 directly. The ``flash_attn`` package only supports NVIDIA Ampere+ GPUs on Linux, so on

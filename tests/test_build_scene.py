@@ -65,8 +65,26 @@ def test_unity_copy_drops_stale_clouds(tmp_path):
     unity.mkdir()
     (unity / "old_object.xyz").write_text("0 0 0\n")
     (unity / "old_object.xyz.meta").write_text("meta")
+    (unity / "old_object_sketch.png").write_bytes(b"png")
     build_scene_mod.build_scene(CONFIG, tmp_path / "out", unity, verbose=False)
     assert not (unity / "old_object.xyz").exists() and not (unity / "old_object.xyz.meta").exists()
+    assert not (unity / "old_object_sketch.png").exists()
+
+
+def test_every_object_has_its_sketch(scene):
+    pytest.importorskip("open3d")
+    from mesh_wrappers.sketch import load_sketch
+
+    s, out, unity = scene
+    for e in s["objects"]:
+        png = (out / e["sketch"]).read_bytes()
+        assert png[:8] == b"\x89PNG\r\n\x1a\n" and len(png) == e["bytes_sketch_png"]
+        assert (unity / e["sketch"]).read_bytes() == png  # the headset keeps and sends it
+        strokes = load_sketch(png)
+        assert strokes.shape == (224, 224) and strokes.any()
+        assert (e["sketch_azimuth"], e["sketch_elevation"]) == (45.0, 30.0)
+    assert s["objects"][0]["sketch_radius"] == pytest.approx(np.linalg.norm([0.5, 0.3, 0.2]), abs=1e-5)
+    assert s["totals"]["bytes_sketch_png"] == sum(e["bytes_sketch_png"] for e in s["objects"])
 
 
 @pytest.mark.parametrize("bad,msg", [

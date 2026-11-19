@@ -6,7 +6,7 @@
 # --- Deep learning core ---
 torch==2.7.1
 torchvision==0.22.1
-transformers==4.43.0          # MeshAnythingV2 (OPT) + FastMesh; FA2 replaced by our SDPA shim when flash-attn is absent
+transformers==4.47.0          # MeshAnythingV2 (OPT) + FastMesh + MeshPad (needs 4.47: it overrides _sample); FA2 -> our SDPA shim
 accelerate==0.33.0            # init_empty_weights / streaming checkpoint loading
 huggingface_hub>=0.24,<1.0    # PyTorchModelHubMixin + weight downloads
 safetensors>=0.4.3

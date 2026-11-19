@@ -5,6 +5,7 @@ Run from the repository root:
     python -m edge.server --mock-delay-s 3                     # mock + 3 s of simulated inference per request
     python -m edge.server --backend model --model meshanything # real model (weights in checkpoints/)
     python -m edge.server --backend classical --method ball_pivoting   # classical reconstruction, milliseconds
+    python -m edge.server --backend model --model meshpad      # MeshPad: sketch image in (format=sketch), mesh out
     python -m edge.server --host 0.0.0.0                       # reachable from other devices on the LAN (Quest)
     python -m edge.server --save-meshes out/meshes             # also keep every mesh sent, as .glb
 
@@ -14,6 +15,8 @@ Protocol
     GET  /health                          JSON: backend, model, device, requests served
     POST /reconstruct?format=xyz|xyzn     body = little-endian float32, N x 3 (xyz) or N x 6 (xyz + normals)
          &object_id=<label>&seed=<int>    -> 200 model/gltf-binary, or JSON {"detail": ...} with 4xx/5xx
+    POST /reconstruct?format=sketch       body = a sketch image (PNG, black strokes on white; MeshPad, or the mock's
+                                          unit box). /health "input" says what the backend takes: points | sketch | both
     GET  /shapes                          point clouds stored on the edge (data/inputs/manifest.json)
     GET  /shapes/{name}/points?points=N   float32 xyz of a stored cloud (scenario: the edge holds the scene)
     GET  /shapes/{name}/mesh?points=N     .glb reconstructed from a stored cloud
@@ -21,7 +24,9 @@ Protocol
     GET  /meshes/{file}                   a mesh saved with --save-meshes
 
 Coordinates: points are expressed in the frame of the files in data/inputs (right-handed, +Y up, the glTF
-frame); the mesh is returned in the same frame and glTFast converts it to Unity's frame on import.
+frame); the mesh is returned in the same frame and glTFast converts it to Unity's frame on import. A mesh made from a
+sketch is returned in the object's local frame of the scene (bounding box centred, longest side 1, +Y up), facing the
+way MeshPad generated it.
 
 Timing headers, in milliseconds: X-Queue-Ms (waiting for the model: one reconstruction at a time),
 X-Preprocess-Ms, X-Inference-Ms, X-Postprocess-Ms, X-Export-Ms and X-Server-Ms (total, from the moment the
@@ -61,7 +66,7 @@ import numpy as np
 
 from edge import ROOT  # also puts models/ on sys.path for the mesh_wrappers imports below
 from edge.reconstruction import (ClassicalBackend, MockBackend, ModelBackend, Reconstruction, ReconstructionError, decode_points,
-                                 encode_points, export_glb)
+                                 decode_sketch, encode_points, export_glb)
 from mesh_wrappers.mesh_io import quality_metrics
 from mesh_wrappers.pointcloud import load_pointcloud
 
@@ -142,20 +147,25 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
         state["rows"] = (state["rows"] + [row])[-KEEP_ROWS:]
 
     async def reconstruct_and_reply(xyz, normals, *, source: str, object_id: str, seed: int, bytes_in: int,
-                                    request: Optional[Request] = None) -> Response:
+                                    request: Optional[Request] = None, sketch: Optional[np.ndarray] = None) -> Response:
+        """xyz/normals: a point cloud; or xyz=None and sketch = (224, 224) bool strokes (format=sketch)."""
         t_received = time.perf_counter()
         request_id = uuid.uuid4().hex[:8]
+        points_in = 0 if xyz is None else len(xyz)
         row = {"timestamp": dt.datetime.now().isoformat(timespec="milliseconds"), "t_epoch": f"{time.time():.3f}",
                "request_id": request_id,
                "source": source, "object_id": object_id, "backend": describe["backend"],
-               "model": describe["model"], "points_in": len(xyz), "bytes_in": bytes_in}
+               "model": describe["model"], "points_in": points_in, "bytes_in": bytes_in}
         if request is not None:
             row.update(client=request.client.host if request.client else "",
                        user_agent=request.headers.get("user-agent", ""))
         async with model_lock:
             t_start = time.perf_counter()
             try:
-                rec: Reconstruction = await asyncio.to_thread(backend.reconstruct, xyz, normals, seed)
+                if sketch is not None:
+                    rec: Reconstruction = await asyncio.to_thread(backend.reconstruct_sketch, sketch, seed)
+                else:
+                    rec = await asyncio.to_thread(backend.reconstruct, xyz, normals, seed)
                 t_export = time.perf_counter()
                 glb = await asyncio.to_thread(export_glb, rec.mesh)
                 export_ms = (time.perf_counter() - t_export) * 1e3
@@ -197,13 +207,14 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
         if verbose:
             name = object_id or source
             accuracy = f", F-score {quality['fscore@0.01']:.2f}" if quality else ""
-            print(f"[edge] {request_id} {name}: {len(xyz)} points -> {len(rec.mesh.faces)} triangles "
+            what = "sketch" if sketch is not None else f"{points_in} points"
+            print(f"[edge] {request_id} {name}: {what} -> {len(rec.mesh.faces)} triangles "
                   f"({len(glb) / 1024:.1f} KB) | queue {queue_ms:.0f} ms, inference {tm['inference']:.0f} ms, "
                   f"total {server_ms:.0f} ms{accuracy}", flush=True)
         headers = {
             "X-Request-Id": request_id, "X-Backend": describe["backend"], "X-Model": describe["model"],
             "X-Model-Label": label,
-            "X-Points-In": str(len(xyz)), "X-Vertices": str(len(rec.mesh.vertices)),
+            "X-Points-In": str(points_in), "X-Vertices": str(len(rec.mesh.vertices)),
             "X-Triangles": str(len(rec.mesh.faces)), "X-Queue-Ms": f"{queue_ms:.2f}",
             "X-Preprocess-Ms": f"{tm['preprocess']:.2f}", "X-Inference-Ms": f"{tm['inference']:.2f}",
             "X-Postprocess-Ms": f"{tm['postprocess']:.2f}", "X-Export-Ms": f"{export_ms:.2f}",
@@ -253,11 +264,19 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
               responses={200: {"content": {"model/gltf-binary": {}}, "description": "the reconstructed mesh"}})
     async def reconstruct(request: Request, fmt: str = Query("xyz", alias="format"), object_id: str = "",
                           seed: int = 0) -> Response:
-        """Body: the point cloud as raw little-endian float32 (N x 3, or N x 6 with format=xyzn)."""
+        """Body: the point cloud as raw little-endian float32 (N x 3, or N x 6 with format=xyzn), or with
+        format=sketch an image file (PNG) of the object's sketch."""
         if objects is not None and object_id not in objects:
             raise HTTPException(409, f"object {object_id!r} is not served by this server "
                                      f"(--objects {','.join(sorted(objects))})")
         body = await request.body()
+        if fmt == "sketch":
+            try:
+                strokes = decode_sketch(body)
+            except ValueError as e:
+                raise HTTPException(400, str(e)) from e
+            return await reconstruct_and_reply(None, None, source="client", object_id=object_id, seed=seed,
+                                               bytes_in=len(body), request=request, sketch=strokes)
         try:
             xyz, normals = decode_points(body, fmt)
         except ValueError as e:
@@ -311,12 +330,15 @@ def create_app(backend, inputs_dir: Path = DATA_INPUTS, log_csv: Optional[Path] 
 def parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--backend", choices=("mock", "model", "classical"), default="mock",
-                   help="mock = convex hull (no weights); model = MeshAnything V2 / FastMesh / TreeMeshGPT; "
+                   help="mock = convex hull (no weights); model = MeshAnything V2 / FastMesh / TreeMeshGPT / MeshPad; "
                         "classical = hull / alpha shape / Ball Pivoting / Poisson (--method)")
     p.add_argument("--method", default="ball_pivoting", help="classical: hull | alpha | ball_pivoting | poisson")
     p.add_argument("--target-faces", type=int, default=None,
                    help="classical: decimate every mesh to this many triangles (e.g. 1000)")
-    p.add_argument("--model", default="meshanything", help="meshanything | fastmesh | treemeshgpt")
+    p.add_argument("--model", default="meshanything",
+                   help="meshanything | fastmesh | treemeshgpt (point clouds) | meshpad (sketch images)")
+    p.add_argument("--encoder-device", default="auto",
+                   help="MeshPad: device of the RADIO image encoder; auto = CPU when the GPU has less than 6 GB")
     p.add_argument("--variant", default=None, help="FastMesh: V1K | V4K; TreeMeshGPT: 7bit | 9bit")
     p.add_argument("--device", default="auto", help="auto | cpu | cuda")
     p.add_argument("--precision", default="auto",
@@ -357,7 +379,7 @@ def main(argv=None) -> int:
         print(f"[edge] loading {args.model} on {args.device} (this takes a while)...", flush=True)
         try:
             backend = ModelBackend(args.model, args.variant, args.device, args.precision, args.attn,
-                                   args.time_budget_s, args.max_new_tokens)
+                                   args.time_budget_s, args.max_new_tokens, encoder_device=args.encoder_device)
         except RuntimeError as e:
             print(f"[edge] cannot start: {e}", file=sys.stderr)
             return 1

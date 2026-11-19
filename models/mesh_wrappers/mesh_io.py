@@ -83,3 +83,40 @@ def quality_metrics(mesh: trimesh.Trimesh, reference: np.ndarray, n_samples: int
     return {"chamfer_l2": float(np.mean(d_ab ** 2) + np.mean(d_ba ** 2)),
             "chamfer_l1": float(np.mean(d_ab) + np.mean(d_ba)),
             f"fscore@{tau}": f, "precision": precision, "recall": recall}
+
+
+def rotate_y(vertices: np.ndarray, degrees: float) -> np.ndarray:
+    a = np.radians(degrees)
+    c, s = np.cos(a), np.sin(a)
+    return np.asarray(vertices) @ np.array([[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]]).T
+
+
+def canonical(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    """Copy with the bounding box centred at the origin and its longest side 1 (the scene objects' local frame)."""
+    out = mesh.copy()
+    if len(out.vertices):
+        lo, hi = out.bounds
+        out.vertices = (np.asarray(out.vertices) - (lo + hi) / 2) / max(float((hi - lo).max()), 1e-9)
+    return out
+
+
+def quality_best_yaw(mesh: trimesh.Trimesh, reference: np.ndarray, steps: int = 24, tau: float = 0.01,
+                     seed: int = 0) -> tuple[trimesh.Trimesh, Optional[dict]]:
+    """For a mesh whose facing is unknown (MeshPad decides the front of an object from one sketch): each of ``steps``
+    rotations about +Y, rescaled to the reference's canonical frame (bbox centred, longest side 1), is scored with a
+    quick quality_metrics; the best one (F-score, then Chamfer) is returned with full metrics and its "yaw_deg"."""
+    if len(mesh.faces) == 0:
+        return mesh, None
+    key = f"fscore@{tau}"
+    best = None
+    for k in range(steps):
+        yaw = 360.0 * k / steps
+        candidate = canonical(transform_vertices(mesh.copy(), lambda v: rotate_y(v, yaw)))
+        q = quality_metrics(candidate, reference, n_samples=4000, tau=tau, seed=seed)
+        score = (q[key], -q["chamfer_l2"])
+        if best is None or score > best[0]:
+            best = (score, yaw, candidate)
+    _, yaw, aligned = best
+    q = quality_metrics(aligned, reference, tau=tau, seed=seed)
+    q["yaw_deg"] = yaw
+    return aligned, q

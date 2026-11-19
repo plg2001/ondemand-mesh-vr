@@ -18,6 +18,8 @@ CHECKPOINTS = ROOT / "checkpoints"
 # An explicit HF_HOME / HF_HUB_CACHE set by the user still wins.
 if "HF_HOME" not in os.environ and "HF_HUB_CACHE" not in os.environ:
     os.environ["HF_HUB_CACHE"] = str(CHECKPOINTS / "huggingface")
+# The same for torch.hub (MeshPad's RADIO encoder: checkpoints/torch/hub/checkpoints) instead of ~/.cache/torch.
+os.environ.setdefault("TORCH_HOME", str(CHECKPOINTS / "torch"))
 
 import torch  # noqa: E402
 LOCK_FILE = ROOT / "models" / "upstream.lock.json"

@@ -1,10 +1,12 @@
 """Reconstruction backends of the edge server, plus the binary point cloud wire format.
 
-A backend turns a sparse point cloud into a triangle mesh expressed in the *same frame as the input points*.
+A backend turns a sparse point cloud into a triangle mesh expressed in the *same frame as the input points*, or (MeshPad,
+``input_kind`` "sketch") a sketch image of an object into a mesh in the object's local frame: bounding box centred at the
+origin, longest side 1, +Y up, as the scene's point clouds (data/scenes/build_scene.py).
 
 * ``MockBackend``  convex hull of the points (+ optional artificial delay). No weights, no GPU, a few ms:
-  used to develop and test the headset <-> edge protocol on a weak PC.
-* ``ModelBackend`` one of the three generative models through ``models/mesh_wrappers``. The network is
+  used to develop and test the headset <-> edge protocol on a weak PC. For a sketch it answers a unit box.
+* ``ModelBackend`` one of the generative models through ``models/mesh_wrappers``. The network is
   loaded once at start-up and kept in memory; each request only pays preprocessing + generation.
 * ``ClassicalBackend`` a classical surface reconstruction (``mesh_wrappers.classical``: convex hull, alpha shape,
   Ball Pivoting, Poisson), milliseconds on the CPU, no weights: the baseline the generative models must beat.
@@ -58,6 +60,28 @@ def encode_points(xyz: np.ndarray, normals: Optional[np.ndarray] = None) -> byte
     return np.ascontiguousarray(arr, dtype="<f4").tobytes()
 
 
+# A sketch travels as an image file (PNG, about 1-2 KB for MeshPad's 224x224 black-on-white drawings): format=sketch.
+MAX_SKETCH_BYTES = 8 * 2**20
+
+
+def decode_sketch(body: bytes) -> np.ndarray:
+    """Request body (an image file) -> (224, 224) bool strokes. Raises ValueError with a readable message."""
+    from mesh_wrappers.sketch import load_sketch
+
+    if not body:
+        raise ValueError("empty body: send the sketch as an image file (PNG)")
+    if len(body) > MAX_SKETCH_BYTES:
+        raise ValueError(f"sketch of {len(body)} bytes: more than {MAX_SKETCH_BYTES} bytes")
+    strokes = load_sketch(body)
+    if not strokes.any():
+        raise ValueError("the sketch is blank: no dark strokes on the light background")
+    return strokes
+
+
+def unit_box() -> trimesh.Trimesh:
+    return trimesh.creation.box(extents=(1.0, 1.0, 1.0))
+
+
 def export_glb(mesh: trimesh.Trimesh) -> bytes:
     return mesh.export(file_type="glb")
 
@@ -95,11 +119,14 @@ def hull_mesh(xyz: np.ndarray) -> trimesh.Trimesh:
 class MockBackend:
     """Fake reconstruction: geometrically tied to the input (same position/size) but computed in ms."""
 
+    input_kind = "both"
+
     def __init__(self, delay_s: float = 0.0):
         self.delay_s = float(delay_s)
 
     def describe(self) -> dict:
-        return {"backend": "mock", "model": "convex-hull", "simulated_inference_s": self.delay_s}
+        return {"backend": "mock", "model": "convex-hull", "simulated_inference_s": self.delay_s,
+                "input": self.input_kind}
 
     def reconstruct(self, xyz: np.ndarray, normals: Optional[np.ndarray] = None, seed: int = 0) -> Reconstruction:
         t0 = time.perf_counter()
@@ -110,11 +137,21 @@ class MockBackend:
         return Reconstruction(mesh, {"preprocess": 0.0, "inference": inference_ms, "postprocess": 0.0},
                               {"method": "convex_hull"})
 
+    def reconstruct_sketch(self, strokes: np.ndarray, seed: int = 0) -> Reconstruction:
+        """A unit box filling the object's local frame: enough to test the image protocol without a model."""
+        t0 = time.perf_counter()
+        if self.delay_s > 0:
+            time.sleep(self.delay_s)
+        return Reconstruction(unit_box(), {"preprocess": 0.0, "inference": (time.perf_counter() - t0) * 1e3,
+                                           "postprocess": 0.0}, {"method": "unit_box"})
+
 
 # ----------------------------------------------------------------------------- real models
 class ClassicalBackend:
     """Classical surface reconstruction of the points (mesh_wrappers.classical). The headset sends points only, so the
     normals that Ball Pivoting and Poisson need are estimated here, as for the generative models (preprocess)."""
+
+    input_kind = "points"
 
     def __init__(self, method: str = "ball_pivoting", target_faces: Optional[int] = None):
         from mesh_wrappers import classical
@@ -136,7 +173,10 @@ class ClassicalBackend:
 
     def describe(self) -> dict:
         return {"backend": "classical", "model": self.method, "model_display": f"{self.label} (classical)",
-                "target_faces": self.target_faces or 0}
+                "target_faces": self.target_faces or 0, "input": self.input_kind}
+
+    def reconstruct_sketch(self, strokes: np.ndarray, seed: int = 0) -> Reconstruction:
+        raise ReconstructionError(f"{self.label} reconstructs point clouds, not sketches: send format=xyz", 400)
 
     def reconstruct(self, xyz: np.ndarray, normals: Optional[np.ndarray] = None, seed: int = 0) -> Reconstruction:
         from mesh_wrappers import classical
@@ -158,11 +198,13 @@ class ClassicalBackend:
 
 
 class ModelBackend:
-    """MeshAnything V2 / FastMesh / TreeMeshGPT, loaded once and reused for every request."""
+    """MeshAnything V2 / FastMesh / TreeMeshGPT (point clouds) or MeshPad (sketches), loaded once and reused."""
+
+    SKETCH_ATTEMPTS = 3  # MeshPad's demo: when a sampled sequence does not decode, "try again with different sampling"
 
     def __init__(self, model: str, variant: Optional[str] = None, device: str = "auto", precision: str = "auto",
                  attn: str = "auto", time_budget_s: Optional[float] = None, max_new_tokens: Optional[int] = None,
-                 upsample: str = "repeat"):
+                 upsample: str = "repeat", encoder_device: str = "auto"):
         import mesh_wrappers.loading  # noqa: F401  (points HF_HUB_CACHE at checkpoints/ before transformers loads)
         import torch
 
@@ -180,7 +222,10 @@ class ModelBackend:
         self.device, self.precision = device, precision
         self.time_budget_s, self.max_new_tokens, self.upsample = time_budget_s, max_new_tokens, upsample
 
-        self.wrapper = get_wrapper_class(model)(variant=variant, device=device, precision=precision)
+        cls = get_wrapper_class(model)
+        self.input_kind = getattr(cls, "input_kind", "points")
+        extra = {"encoder_device": encoder_device} if self.input_kind == "sketch" else {}
+        self.wrapper = cls(variant=variant, device=device, precision=precision, **extra)
         if not self.wrapper.repo_available():
             raise RuntimeError(f"{self.wrapper.display_name}: code not found in {self.wrapper.repo_dir}; "
                                f"run: python models/setup_models.py")
@@ -193,6 +238,13 @@ class ModelBackend:
         t0 = time.perf_counter()
         self.wrapper.load()
         self.load_s = time.perf_counter() - t0
+        if self.input_kind == "sketch":  # first encoder pass and CUDA kernels now, not in the first request (~2.5 s)
+            square = np.zeros((224, 224), bool)
+            square[[60, 164], 60:165] = square[60:165, [60, 164]] = True
+            try:
+                self.wrapper.generate_sketch(square, max_new_tokens=12, seed=0)
+            except Exception:  # only a warm-up: whatever happens the server starts
+                pass
         # per-stage timers stay installed for the whole server lifetime (decode steps, ms/token, time budget)
         self.timer = StageTimer(device)
         for stage, obj, attr in self.wrapper.stage_targets():
@@ -201,14 +253,58 @@ class ModelBackend:
     def describe(self) -> dict:
         w = self.wrapper
         name = self._torch.cuda.get_device_name(self.device) if self.device.startswith("cuda") else "cpu"
-        return {"backend": "model", "model": w.name, "model_display": w.display_name, "variant": w.variant,
-                "device": self.device, "device_name": name, "precision": self.precision,
-                "attn": w.attn_backend, "load_s": round(self.load_s, 2), "time_budget_s": self.time_budget_s}
+        out = {"backend": "model", "model": w.name, "model_display": w.display_name, "variant": w.variant,
+               "device": self.device, "device_name": name, "precision": self.precision,
+               "attn": w.attn_backend, "load_s": round(self.load_s, 2), "time_budget_s": self.time_budget_s,
+               "input": self.input_kind}
+        if self.input_kind == "sketch":
+            out["encoder_device"] = w.resolved_encoder_device()
+        return out
+
+    def reconstruct_sketch(self, strokes: np.ndarray, seed: int = 0) -> Reconstruction:
+        """MeshPad: sketch -> mesh in the object's local frame (bbox centred, longest side 1), facing as generated."""
+        from benchmarks.profiler import GenerationBudgetExceeded, cuda_sync
+        from mesh_wrappers.mesh_io import canonical
+
+        w = self.wrapper
+        if self.input_kind != "sketch":
+            raise ReconstructionError(f"{w.display_name} reconstructs point clouds, not sketches: send format=xyz", 400)
+        t1 = time.perf_counter()
+        self.timer.reset()
+        self.timer.deadline = t1 + self.time_budget_s if self.time_budget_s else None
+        gen, attempts = None, 0
+        try:
+            for attempts in range(1, self.SKETCH_ATTEMPTS + 1):
+                gen = w.generate_sketch(strokes, self.max_new_tokens, seed + attempts - 1)
+                if gen.triangles is not None and not gen.extra.get("detokenize_error"):
+                    break
+        except GenerationBudgetExceeded as e:
+            raise ReconstructionError(f"time budget of {self.time_budget_s} s exceeded ({e})", 504) from e
+        except (self._torch.OutOfMemoryError, MemoryError) as e:
+            raise ReconstructionError(f"out of memory on {self.device}: {str(e).splitlines()[0][:200]}", 503) from e
+        finally:
+            self.timer.deadline = None
+            cuda_sync(self.device)
+        t2 = time.perf_counter()
+        if gen is None or gen.triangles is None:
+            raise ReconstructionError(f"{w.display_name} produced no mesh from this sketch ({attempts} attempts)")
+        mesh = canonical(triangles_to_mesh(gen.triangles))
+        if len(mesh.faces) == 0:
+            raise ReconstructionError("the model produced an empty mesh")
+        t3 = time.perf_counter()
+        steps = self.timer.summary()
+        info = {"attempts": attempts, "truncated": bool(gen.truncated), "tokens": gen.n_tokens,
+                "detokenize_error": bool(gen.extra.get("detokenize_error")), "decode_steps": steps.get("decode_steps"),
+                "ms_per_token_p50": steps.get("ms_per_token_p50"), "encoder_s": steps.get("encoder_s")}
+        return Reconstruction(mesh, {"preprocess": 0.0, "inference": (t2 - t1) * 1e3, "postprocess": (t3 - t2) * 1e3},
+                              info)
 
     def reconstruct(self, xyz: np.ndarray, normals: Optional[np.ndarray] = None, seed: int = 0) -> Reconstruction:
         from benchmarks.profiler import GenerationBudgetExceeded, cuda_sync
 
         w = self.wrapper
+        if self.input_kind == "sketch":
+            raise ReconstructionError(f"{w.display_name} generates from a sketch image: send format=sketch", 400)
         t0 = time.perf_counter()
         normals_source = "unused"
         if w.needs_normals:

@@ -15,6 +15,10 @@ using UnityEngine.SceneManagement;
 ///   Prepare project                          only the settings, nothing is built
 ///   Prepare and build APK                    builds Builds/OnDemandMeshVR.apk (install it with adb or Build And Run)
 ///   Prepare, build and run on headset        also installs and starts it on the connected Quest
+///
+/// From the command line, with the editor closed (no dialogs; exit code 0 = .apk built):
+///   Unity.exe -batchmode -quit -projectPath unity/OnDemandMeshVR -buildTarget Android
+///             -executeMethod QuestBuild.BuildFromCommandLine -logFile build.log
 /// </summary>
 public static class QuestBuild
 {
@@ -146,7 +150,25 @@ public static class QuestBuild
         return null;
     }
 
-    static void Build(bool run, List<string> changes)
+    /// <summary>Command-line build (see the class comment): prepares the project, builds the .apk, exits with 0 if it
+    /// was built, 1 if the build failed, 2 if the active platform is not Android.</summary>
+    public static void BuildFromCommandLine()
+    {
+        if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.Android)
+        {
+            Debug.LogError("[QuestBuild] the active platform is not Android: add -buildTarget Android to the command line");
+            EditorApplication.Exit(2);
+            return;
+        }
+        foreach (var change in Prepare())
+            Debug.Log("[QuestBuild] " + change);
+        var (report, output) = BuildApk(false);
+        foreach (var e in Errors(report))
+            Debug.LogError("[QuestBuild] " + e);
+        EditorApplication.Exit(report.summary.result == BuildResult.Succeeded && File.Exists(output) ? 0 : 1);
+    }
+
+    static (BuildReport report, string output) BuildApk(bool run)
     {
         var projectRoot = Directory.GetParent(Application.dataPath).FullName;
         var outputDir = Path.Combine(projectRoot, "Builds");
@@ -163,13 +185,27 @@ public static class QuestBuild
             targetGroup = BuildTargetGroup.Android,
             options = run ? BuildOptions.AutoRunPlayer : BuildOptions.None
         });
-
         var summary = report.summary;
         if (summary.result == BuildResult.Succeeded)
         {
             // summary.totalSize is the whole output folder (debug symbols included, > 1 GB): the app is the .apk
             var mb = File.Exists(output) ? new FileInfo(output).Length / (1024.0 * 1024.0) : summary.totalSize / (1024.0 * 1024.0);
             Debug.Log($"[QuestBuild] build OK: {output} ({mb:F0} MB) in {summary.totalTime.TotalMinutes:F1} min");
+        }
+        return (report, output);
+    }
+
+    static List<string> Errors(BuildReport report) =>
+        report.steps.SelectMany(s => s.messages).Where(m => m.type == LogType.Error)
+              .Select(m => m.content).Distinct().Take(5).ToList();
+
+    static void Build(bool run, List<string> changes)
+    {
+        var (report, output) = BuildApk(run);
+        var summary = report.summary;
+        if (summary.result == BuildResult.Succeeded)
+        {
+            var mb = File.Exists(output) ? new FileInfo(output).Length / (1024.0 * 1024.0) : summary.totalSize / (1024.0 * 1024.0);
             if (EditorUtility.DisplayDialog("Build completata",
                     $"{output}\nL'app pesa {mb:F0} MB. Build: {summary.totalTime.TotalMinutes:F1} minuti." +
                     (run
@@ -181,8 +217,7 @@ public static class QuestBuild
             return;
         }
 
-        var errors = report.steps.SelectMany(s => s.messages).Where(m => m.type == LogType.Error)
-                           .Select(m => m.content).Distinct().Take(5).ToList();
+        var errors = Errors(report);
         foreach (var e in errors)
             Debug.LogError("[QuestBuild] " + e);
         Info($"Build non riuscita: {summary.result}.\n\n" +

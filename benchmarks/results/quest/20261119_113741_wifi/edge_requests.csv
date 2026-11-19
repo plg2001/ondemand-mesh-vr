@@ -1,0 +1,2 @@
+timestamp,request_id,source,object_id,status,backend,model,points_in,bytes_in,bytes_out,vertices,triangles,queue_ms,preprocess_ms,inference_ms,postprocess_ms,export_ms,server_ms,decode_steps,detail,client,user_agent,quality_ms,fscore,precision,recall,chamfer_l2,mesh_file,t_epoch
+2026-11-19T11:38:31.112,834807ad,client,box_01,ok,model,meshpad,0,1038,1276,16,28,0.1,0.0,5911.1,52.1,2.9,6101.8,49,,192.168.1.10,"UnityPlayer/6000.3.26f1 (UnityWebRequest/1.0, libcurl/8.20.0-DEV)",131.3,0.6621,0.6239,0.7053,0.003865,834807ad_box_01.glb,1795084711.112

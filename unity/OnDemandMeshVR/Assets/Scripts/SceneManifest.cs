@@ -20,6 +20,11 @@ public class SceneObjectEntry
     public string points;            // .xyz file name, relative to the scene folder (object's local frame)
     public int point_count;
     public int bytes_xyz_f32;
+    public string sketch;            // _sketch.png file name (MeshPad-style drawing of the object), "" if none
+    public int bytes_sketch_png;
+    public float sketch_azimuth;     // the drawing's view, degrees, in the object's local frame
+    public float sketch_elevation;
+    public float sketch_radius;      // farthest vertex of the object in its local frame: sets the drawing's scale
     public float[] position;         // x, y, z
     public float[] rotation;         // quaternion x, y, z, w
     public float[] scale;            // x, y, z
@@ -36,6 +41,7 @@ public class SceneTotals
     public int objects;
     public int points;
     public long bytes_xyz_f32;
+    public long bytes_sketch_png;
     public long source_vertices;
     public long source_triangles;
     public long source_mesh_bytes;

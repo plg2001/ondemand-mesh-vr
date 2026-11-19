@@ -61,11 +61,13 @@ def test_install_makes_fa2_opt_equal_to_eager():
 
     flash_shim.install()
     assert fau._flash_attention_forward is shim and modeling_opt._flash_attention_forward is shim
-    cfg = OPTConfig(hidden_size=64, num_hidden_layers=2, num_attention_heads=4, ffn_dim=128, vocab_size=50,
-                    max_position_embeddings=64, word_embed_proj_dim=64)
+    kw = dict(hidden_size=64, num_hidden_layers=2, num_attention_heads=4, ffn_dim=128, vocab_size=50,
+              max_position_embeddings=64, word_embed_proj_dim=64)
     torch.manual_seed(0)
-    eager = OPTForCausalLM(cfg).eval()
-    fa2 = OPTForCausalLM._from_config(OPTConfig(**cfg.to_dict()), use_flash_attention_2=True).eval()
+    eager = OPTForCausalLM(OPTConfig(**kw)).eval()
+    # a fresh config: since transformers 4.47 a config already used by a model carries _attn_implementation_autoset,
+    # and a copy of it (to_dict) would keep "eager" whatever use_flash_attention_2 says
+    fa2 = OPTForCausalLM._from_config(OPTConfig(**kw), use_flash_attention_2=True).eval()
     fa2.load_state_dict(eager.state_dict())
     assert fa2.config._attn_implementation == "flash_attention_2"
     ids = torch.randint(4, 50, (1, 12))
