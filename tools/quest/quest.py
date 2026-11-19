@@ -89,11 +89,12 @@ def adb_candidates(platform: str = sys.platform, home: Optional[Path] = None,
         unity_tail = "*/Editor/Data/PlaybackEngines/AndroidPlayer/SDK/platform-tools/adb"
         extra = []
     # an SDK named in the environment, then Unity's own adb (the editor runs that one: mixing two adb versions makes
-    # them kill each other's server), then the default SDK folder and Meta Quest Developer Hub
+    # them kill each other's server), then the default SDK folder and Meta Quest Developer Hub, and last a copy of
+    # platform-tools inside the project (tools/platform-tools, git-ignored: for a PC without Unity or an SDK)
     found = [sdk / "platform-tools" / exe for sdk in sdks[:-1]]
     for hub in hubs:  # newest editor first
         found += sorted(hub.glob(unity_tail), reverse=True) if hub.exists() else []
-    return found + [sdks[-1] / "platform-tools" / exe] + extra
+    return found + [sdks[-1] / "platform-tools" / exe] + extra + [ROOT / "tools" / "platform-tools" / exe]
 
 
 def find_adb() -> Optional[str]:

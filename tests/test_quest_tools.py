@@ -116,6 +116,7 @@ def test_adb_candidates_for_each_system(tmp_path):
     assert tmp_path / "Local" / "Android" / "Sdk" / "platform-tools" / "adb.exe" in windows
     mac = quest.adb_candidates("darwin", home=tmp_path, env={})
     assert mac[0] == tmp_path / "Library" / "Android" / "sdk" / "platform-tools" / "adb"
+    assert windows[-1] == quest.ROOT / "tools" / "platform-tools" / "adb.exe"  # the project's copy comes last
 
 
 def test_headset_utc_offset():

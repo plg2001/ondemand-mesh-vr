@@ -42,6 +42,8 @@ sealed class Adb
         var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         candidates.Add(Path.Combine(local, "Android", "Sdk", "platform-tools", "adb.exe"));
         candidates.Add(Path.Combine(programFiles, "Meta Quest Developer Hub", "resources", "bin", "adb.exe"));
+        // a copy of platform-tools inside the project, next to this exe: for a PC without Unity or an Android SDK
+        candidates.Add(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tools", "platform-tools", "adb.exe"));
         return candidates.FirstOrDefault(File.Exists);
     }
 

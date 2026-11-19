@@ -25,3 +25,6 @@ CLAUDE.md
 
 # Stato del progetto: tenuto solo in locale, non nel repository
 docs/stato_progetto.md
+
+# adb copied into the project for PCs without Unity (Android platform-tools, not ours to version)
+tools/platform-tools/
