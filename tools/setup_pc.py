@@ -19,9 +19,13 @@ Steps
     revisions recorded in models/upstream.lock.json: models/setup_models.py downloads them. With --checkpoints-from
     they are copied from that folder (a copy made with --export-checkpoints, or a plain copy of checkpoints/) and
     setup_models.py only checks them against the lock, without downloading.
- 4. Test point clouds (data/inputs) and the demo scene with the reference clouds the server needs to measure
+ 4. adb, to talk to the headset: when tools/quest/quest.py finds none (Unity's, an Android SDK's, Meta Quest
+    Developer Hub's, tools/platform-tools), Google's official platform-tools package (~7 MB, Android SDK license) is
+    downloaded and unpacked into tools/platform-tools (git-ignored), where quest.py and EdgeControl look last.
+    --no-adb skips it.
+ 5. Test point clouds (data/inputs) and the demo scene with the reference clouds the server needs to measure
     accuracy (data/scenes/demo_room; the copy in the Unity project comes out identical).
- 5. The tests (no GPU or weights needed).
+ 6. The tests (no GPU or weights needed).
 """
 from __future__ import annotations
 
@@ -31,6 +35,9 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
+import urllib.request
+import zipfile
 from pathlib import Path
 from typing import Optional
 
@@ -38,6 +45,8 @@ ROOT = Path(__file__).resolve().parents[1]
 TORCH = ["torch==2.7.1", "torchvision==0.22.1"]
 TORCH_INDEX = "https://download.pytorch.org/whl/{}"
 LOCK = ROOT / "models" / "upstream.lock.json"
+PLATFORM_TOOLS = ROOT / "tools" / "platform-tools"  # quest.adb_candidates' last place (EdgeControl's Adb.Find too)
+PLATFORM_TOOLS_URL = "https://dl.google.com/android/repository/platform-tools-latest-{}.zip"
 
 
 # ----------------------------------------------------------------------------- pure helpers (tested)
@@ -113,6 +122,29 @@ def copy_weights(src_root: Path, dst_root: Path, dry_run: bool) -> tuple[int, in
     return copied, skipped, missing
 
 
+def platform_tools_url(platform: str = sys.platform) -> str:
+    """Google's package of adb for 'win32', 'linux' or 'darwin'."""
+    return PLATFORM_TOOLS_URL.format({"win32": "windows", "darwin": "darwin"}.get(platform, "linux"))
+
+
+def unpack_platform_tools(archive: Path, dest: Path = PLATFORM_TOOLS) -> Path:
+    """Unpacks Google's platform-tools zip (one top folder, platform-tools/) into dest; returns adb's path.
+    Unpacked next to dest first and then moved, so a broken download never leaves half a folder behind."""
+    exe = "adb.exe" if os.name == "nt" else "adb"
+    with tempfile.TemporaryDirectory(dir=dest.parent) as tmp, zipfile.ZipFile(archive) as z:
+        z.extractall(tmp)  # zipfile drops absolute paths and '..' parts
+        top = Path(tmp) / "platform-tools"
+        if not (top / exe).exists():
+            raise ValueError(f"{archive.name}: no platform-tools/{exe} inside")
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.move(str(top), str(dest))
+    adb = dest / exe
+    if os.name != "nt":
+        adb.chmod(0o755)
+    return adb
+
+
 # ----------------------------------------------------------------------------- running things
 class Runner:
     def __init__(self, dry_run: bool):
@@ -151,7 +183,7 @@ def python311() -> Optional[list]:
 # ----------------------------------------------------------------------------- steps
 def step_venv(r: Runner) -> Path:
     py = venv_python()
-    print("\n[1/5] Python 3.11 environment (.venv)")
+    print("\n[1/6] Python 3.11 environment (.venv)")
     if py.exists() and output([py, "-c", "import sys; print(sys.version_info[:2] == (3, 11))"]) == "True":
         print(f"  already there: {py}")
         return py
@@ -171,7 +203,7 @@ def step_venv(r: Runner) -> Path:
 
 
 def step_packages(r: Runner, py: Path, forced_cuda: str) -> None:
-    print("\n[2/5] PyTorch and the other packages")
+    print("\n[2/6] PyTorch and the other packages")
     gpu = parse_nvidia_smi(output(["nvidia-smi", "--query-gpu=name,compute_cap,driver_version",
                                    "--format=csv,noheader"])) if shutil.which("nvidia-smi") else None
     variant = torch_variant(gpu, forced=forced_cuda)
@@ -189,7 +221,7 @@ def step_packages(r: Runner, py: Path, forced_cuda: str) -> None:
 
 
 def step_models(r: Runner, py: Path, checkpoints_from: Optional[Path], skip_weights: bool) -> None:
-    print("\n[3/5] Models: code at the pinned commits and weights")
+    print("\n[3/6] Models: code at the pinned commits and weights")
     if checkpoints_from:
         if not checkpoints_from.is_dir():
             sys.exit(f"[setup] --checkpoints-from: {checkpoints_from} is not a folder")
@@ -201,8 +233,34 @@ def step_models(r: Runner, py: Path, checkpoints_from: Optional[Path], skip_weig
     r.run([py, ROOT / "models" / "setup_models.py", *(["--skip-weights"] if skip_weights else [])])
 
 
+def step_adb(r: Runner, py: Path, skip: bool) -> None:
+    print("\n[4/6] adb (to install the app on the headset and talk to it)")
+    if skip:
+        print("  skipped (--no-adb)")
+        return
+    # the same search as the headset tools use, so what is found here is what they will run
+    found = output([py, "-c", "import sys; sys.path.insert(0, r'" + str(ROOT / "tools" / "quest") + "'); "
+                    "import quest; print(quest.find_adb() or '')"]) if py.exists() else ""
+    if found:
+        print(f"  already there: {found}")
+        return
+    url = platform_tools_url()
+    print(f"  not found: downloading Google's platform-tools (Android SDK license)\n  {url}\n  -> {PLATFORM_TOOLS}")
+    if r.dry_run:
+        return
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / "platform-tools.zip"
+            urllib.request.urlretrieve(url, archive)
+            adb = unpack_platform_tools(archive)
+        print(f"  adb ready: {adb}")
+    except (OSError, ValueError, zipfile.BadZipFile) as e:  # no network, proxy, broken file: the rest still works
+        print(f"  [warning] adb not downloaded ({e}); the headset tools need it. Download {url} and unpack it "
+              f"into {PLATFORM_TOOLS.parent}, then run this again.")
+
+
 def step_data(r: Runner, py: Path, force: bool) -> None:
-    print("\n[4/5] Test point clouds and demo scene")
+    print("\n[5/6] Test point clouds and demo scene")
     if force or not any((ROOT / "data" / "inputs").glob("*/*.xyz")):
         r.run([py, ROOT / "data" / "inputs" / "generate_pointclouds.py"])
     else:
@@ -238,6 +296,7 @@ def main(argv=None) -> int:
     ap.add_argument("--skip-weights", action="store_true", help="only the models' code, no weights")
     ap.add_argument("--cuda", choices=("auto", "cu118", "cu128", "cpu"), default="auto",
                     help="PyTorch build (default: chosen from the GPU)")
+    ap.add_argument("--no-adb", action="store_true", help="do not download adb when the headset tools find none")
     ap.add_argument("--force-data", action="store_true", help="regenerate point clouds and scene even if present")
     ap.add_argument("--no-tests", action="store_true", help="skip the tests")
     ap.add_argument("--dry-run", action="store_true", help="print the steps without running them")
@@ -258,8 +317,9 @@ def main(argv=None) -> int:
     py = step_venv(r)
     step_packages(r, py, args.cuda)
     step_models(r, py, args.checkpoints_from, args.skip_weights)
+    step_adb(r, py, args.no_adb)
     step_data(r, py, args.force_data)
-    print("\n[5/5] Tests")
+    print("\n[6/6] Tests")
     if args.no_tests:
         print("  skipped")
     else:

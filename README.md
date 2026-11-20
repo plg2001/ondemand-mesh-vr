@@ -92,9 +92,11 @@ l'ambiente Python; «Pesi da» = `--checkpoints-from`, per i pesi da un disco es
 ambiente `.venv` con **Python 3.11** (con `uv`, se c'è, che scarica da solo il 3.11; altrimenti `py -3.11` /
 `python3.11`); **PyTorch 2.7.1 per la scheda del PC** (CUDA 12.8 per le RTX 50, CUDA 11.8 per le altre NVIDIA dalla
 GT 1030 alla RTX 40, CPU senza NVIDIA; `--cuda` la forza) e poi `requirements.txt`; codice dei modelli ai commit
-fissati e **pesi alle revisioni di `models/upstream.lock.json`** (stessi file su ogni PC, controllati con sha256); nuvole
-di prova e scena con le nuvole di riferimento per l'accuratezza; test. Opzioni: `--dry-run` (mostra soltanto),
-`--skip-weights`, `--no-tests` (in EdgeControl sono le caselle della stessa pagina).
+fissati e **pesi alle revisioni di `models/upstream.lock.json`** (stessi file su ogni PC, controllati con sha256);
+**adb**, se il PC non ne ha uno (Unity, Android SDK, Meta Quest Developer Hub): il pacchetto ufficiale platform-tools di
+Google (circa 7 MB, licenza dell'Android SDK) scaricato in `tools/platform-tools`; nuvole di prova e scena con le nuvole
+di riferimento per l'accuratezza; test. Opzioni: `--dry-run` (mostra soltanto), `--skip-weights`, `--no-tests` (in
+EdgeControl sono le caselle della stessa pagina), `--no-adb`.
 
 **Pesi su disco esterno** (11 GB, utile se la rete del laboratorio è lenta o Google Drive blocca TreeMeshGPT): su questo
 PC `python tools/setup_pc.py --export-checkpoints E:/checkpoints` (in EdgeControl: «Esporta i pesi…») copia solo i 6 file dei pesi (10,6 GB, senza i

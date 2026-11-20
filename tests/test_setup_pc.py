@@ -71,3 +71,41 @@ def test_launchers_are_windows_only():
     assert not list(ROOT.glob("*.sh")) and not list((ROOT / "tools").rglob("*.sh"))
     attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
     assert "*.exe binary" in attributes
+
+
+def test_platform_tools_url_per_platform():
+    url = setup_pc.platform_tools_url
+    assert url("win32") == "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
+    assert url("darwin").endswith("-darwin.zip") and url("linux").endswith("-linux.zip")
+
+
+def test_platform_tools_go_where_the_headset_tools_look():
+    spec = importlib.util.spec_from_file_location("quest", ROOT / "tools" / "quest" / "quest.py")
+    quest = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(quest)
+    assert quest.adb_candidates("win32", Path("C:/Users/x"), env={})[-1].parent == setup_pc.PLATFORM_TOOLS
+
+
+def test_unpack_platform_tools_replaces_the_folder(tmp_path):
+    import os
+    import zipfile
+    import pytest
+    exe = "adb.exe" if os.name == "nt" else "adb"
+    archive = tmp_path / "pt.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr(f"platform-tools/{exe}", b"adb")
+        z.writestr("platform-tools/AdbWinApi.dll", b"dll")
+    dest = tmp_path / "tools" / "platform-tools"
+    dest.mkdir(parents=True)
+    (dest / "old.txt").write_text("stale")
+    adb = setup_pc.unpack_platform_tools(archive, dest)
+    assert adb == dest / exe and adb.read_bytes() == b"adb"
+    assert sorted(p.name for p in dest.iterdir()) == sorted([exe, "AdbWinApi.dll"])
+    assert [p.name for p in dest.parent.iterdir()] == ["platform-tools"]  # no temporary folder left
+
+    broken = tmp_path / "broken.zip"
+    with zipfile.ZipFile(broken, "w") as z:
+        z.writestr("something/else.txt", b"")
+    with pytest.raises(ValueError):
+        setup_pc.unpack_platform_tools(broken, dest)
+    assert (dest / exe).exists()  # a bad package leaves the working adb alone
