@@ -556,6 +556,7 @@ def cmd_session(adb: Adb, args) -> int:
 
     dest = QUEST_RESULTS / f"{dt.datetime.now():%Y%m%d_%H%M%S}_{args.link}"
     dest.mkdir(parents=True, exist_ok=True)
+    print(f"session folder: {dest}", flush=True)  # EdgeControl deletes it when the session is ended without saving
     offset_start = clock_offset(adb)
     if offset_start is not None:
         print(f"headset clock - PC clock: {offset_start:+.2f} s (stored; the summary corrects for it)")

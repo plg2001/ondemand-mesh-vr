@@ -32,7 +32,8 @@ ICON = HERE / "EdgeControl.ico"
 STAMP = HERE / "build.stamp"
 EXE = ROOT / "EdgeControl.exe"
 REFERENCES = ("mscorlib.dll", "System.dll", "System.Core.dll", "System.Drawing.dll", "System.Windows.Forms.dll",
-              "System.Web.Extensions.dll", "System.Management.dll")
+              "System.Web.Extensions.dll", "System.Management.dll",
+              "Microsoft.VisualBasic.dll")  # FileSystem.DeleteDirectory: deleted results go to the Recycle Bin
 
 
 def sources_digest() -> str:

@@ -484,11 +484,11 @@ sealed class MainForm : Form
     {
         var tab = activeConsole;
         if (requestsShown || !tab.Running) return;
-        if (tab.Kind == ConsoleKind.Session &&
-            MessageBox.Show(this, "Interrompere la sessione SENZA salvare i risultati?\n\n" +
-                                  "Per salvarli usa invece «Termina e salva» nella pagina Server.",
-                            "EdgeControl", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+        if (tab.Kind == ConsoleKind.Session)
+        {
+            ServerPage.DiscardSession();  // asks, stops it and deletes the session's folder
             return;
+        }
         tab.Task.Kill();
     }
 

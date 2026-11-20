@@ -471,16 +471,20 @@ e ne mostra l'output nella console in basso.
   solo quelli spuntati (`--objects`: gli altri restano punti). «Opzioni avanzate»: porta, dispositivo, precisione,
   variante, token massimi, misura dell'accuratezza, salvataggio delle mesh, altre opzioni. La riga «Comando» mostra il
   comando esatto (si può copiare). Se c'è già un server acceso fuori dall'app, l'app lo dice e può fermarlo.
-- **Sessione di misura** (stessa pagina, con le stesse scelte; Quest via Wi-Fi o via cavo): «riavvia l'app»
-  (altrimenti `--no-restart`), «server su un altro PC» (`--server`, solo Wi-Fi). Mostra da quanto è in corso, gli fps
-  dell'app e le richieste; «Termina e salva» manda l'Invio, poi «Riassunto» apre il `summary.md` della sessione.
+- **Sessione di misura** (stessa pagina, con le stesse scelte; Quest via Wi-Fi o via cavo): riavvia sempre l'app
+  sul visore (la avvia se è chiusa, la chiude e la riapre se è aperta, così parte senza mesh in memoria); «server su un
+  altro PC» (`--server`, solo Wi-Fi). Mostra da quanto è in corso, gli fps
+  dell'app e le richieste; «Termina e salva» manda l'Invio, poi «Riassunto» apre il `summary.md` della sessione;
+  «Termina senza salvare» (o «Interrompi» nella scheda Sessione), dopo una conferma, ferma sessione e server e cancella la
+  cartella della sessione.
   Chiudere l'app durante una sessione chiede se terminarla e salvarla prima.
 - **Visore**: stato (modello, Android, batteria, app installata e quando, indirizzo del server usato dall'app, tunnel
   USB, indirizzo Wi-Fi del visore), «Controllo completo», «Installa e avvia» (avvisa quando l'APK sul PC è più recente di
   quella installata), Avvia / Riavvia / Chiudi l'app, dove l'app cerca il server (Wi-Fi di questo PC, cavo USB, un
   altro PC) senza avviarlo, log di Unity dal vivo, copia dei CSV.
 - **Risultati**: le cartelle di `benchmarks/results/quest` con data, collegamento e cosa ricostruiva il server;
-  anteprima di `summary.md`, apertura della cartella, «Rigenera il riassunto».
+  anteprima di `summary.md`, apertura della cartella, «Rigenera il riassunto»; le caselle accanto alle sessioni scelgono
+  quelle da cancellare con «Cancella» (dopo una conferma; le cartelle vanno nel Cestino di Windows).
 - **Strumenti**: «Prepara / controlla il PC» (`tools/setup_pc.py`, con le sue opzioni e i pesi da un'altra cartella),
   «Esporta i pesi», altri comandi del progetto (test, scena di prova, nuvole, modelli, metodi classici, tabelle dei
   requisiti, stato della GPU) e scorciatoie (cartella, README, stato del progetto, API del server, log del server,

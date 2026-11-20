@@ -33,15 +33,15 @@ sealed class ServerPage : Page
     RadioButton rbSim, rbWifi, rbUsb, rbMock, rbModel, rbClassic, rbAll, rbOnly;
     ComboBox cbIp, cbModel, cbMethod, cbDevice, cbPrecision, cbVariant;
     NumericUpDown nDelay, nBudget, nFaces, nTokens, nPort;
-    CheckBox chkFaces, chkQuality, chkSave, chkRestart, chkRemote;
+    CheckBox chkFaces, chkQuality, chkSave, chkRemote;
     TextBox tbExtra, tbCommand, tbRemote;
-    FlatButton btnStart, btnStop, btnDocs, btnSessionStart, btnSessionEnd, btnSessionResults;
+    FlatButton btnStart, btnStop, btnDocs, btnSessionStart, btnSessionEnd, btnSessionDiscard, btnSessionResults;
     Label lblSession;
     Section advanced;
     Disclosure lnkAdvanced;
     TableLayoutPanel root;
-    bool loading = true, sessionEnding;
-    string lastSessionDir, sessionFps = "";
+    bool loading = true, sessionEnding, sessionDiscarding;
+    string lastSessionDir, sessionDir, sessionFps = "";
     DateTime sessionStarted;
 
     static readonly Choice[] Models =
@@ -144,15 +144,17 @@ sealed class ServerPage : Page
         tips.SetToolTip(btnDocs, "Documentazione interattiva delle API del server (/docs), nel browser.");
         btnSessionStart = new FlatButton("Sessione di misura", Look.Start);
         btnSessionEnd = new FlatButton("Termina e salva", Look.Stop);
+        btnSessionDiscard = new FlatButton("Termina senza salvare");
         btnSessionResults = new FlatButton("Riassunto", Look.Link) { Visible = false };
         btnSessionStart.Click += (s, e) => StartSession();
         btnSessionEnd.Click += (s, e) => EndSession();
+        btnSessionDiscard.Click += (s, e) => DiscardSession();
+        tips.SetToolTip(btnSessionDiscard, "Ferma la sessione e il suo server e cancella la sua cartella in benchmarks\\results\\quest.");
         btnSessionResults.Click += (s, e) =>
         {
             App.ShowPage(App.ResultsPage);
             App.ResultsPage.Reload(lastSessionDir);
         };
-        chkRestart = Make.Check("riavvia l'app", true);
         chkRemote = Make.Check("server su un altro PC:");
         chkRemote.Margin = new Padding(0, Theme.S(4), Theme.S(4), Theme.S(2));
         tbRemote = Make.Text(180, "", "http://192.168.1.50:8000");
@@ -160,8 +162,8 @@ sealed class ServerPage : Page
                                    "la sessione non ne avvia uno qui e alla fine scarica da lì le righe del log e le mesh.");
         lblSession = Make.Inline("", Theme.Muted);  // only while a session runs: elapsed time, fps, requests
         var serverHalf = Make.Row(btnStart, btnStop, btnDocs);
-        var sessionHalf = Make.Stack(Make.Row(btnSessionStart, btnSessionEnd, btnSessionResults, lblSession),
-                                     Make.Row(chkRestart, chkRemote, tbRemote));
+        var sessionHalf = Make.Stack(Make.Row(btnSessionStart, btnSessionEnd, btnSessionDiscard, btnSessionResults, lblSession),
+                                     Make.Row(chkRemote, tbRemote));
         var divider = new Panel { Size = new Size(1, Theme.S(28)), BackColor = Theme.Rule, Margin = new Padding(Theme.S(8), 0, Theme.S(20), 0) };
         var actionsTable = Make.Columns((serverHalf, 0), (divider, 0), (sessionHalf, 100));
         actionsTable.Dock = DockStyle.None;
@@ -226,7 +228,7 @@ sealed class ServerPage : Page
             combo.SelectedIndexChanged += (s, e) => UpdateForm();
         foreach (var number in new[] { nDelay, nBudget, nFaces, nTokens, nPort })
             number.ValueChanged += (s, e) => UpdateForm();
-        foreach (var check in new[] { chkFaces, chkQuality, chkSave, chkRestart, chkRemote })
+        foreach (var check in new[] { chkFaces, chkQuality, chkSave, chkRemote })
             check.CheckedChanged += (s, e) => UpdateForm();
         foreach (var check in objectChecks)
             check.CheckedChanged += (s, e) =>
@@ -348,7 +350,6 @@ sealed class ServerPage : Page
         if (rbWifi.Checked && Value(cbIp).Length > 0) a.AddRange(new[] { "--ip", Value(cbIp) });
         if (chkRemote.Checked) a.AddRange(new[] { "--server", tbRemote.Text.Trim() });
         else a.Add(ServerArgsOption(ServerArgs(true)));
-        if (!chkRestart.Checked) a.Add("--no-restart");
         return a;
     }
 
@@ -390,6 +391,7 @@ sealed class ServerPage : Page
         btnDocs.Enabled = App.Server.Up;
         btnSessionStart.Enabled = !session;
         btnSessionEnd.Enabled = session && !sessionEnding;
+        btnSessionDiscard.Enabled = session && !sessionEnding;
         btnSessionResults.Visible = !session && lastSessionDir != null && Directory.Exists(lastSessionDir);
         string text = "";
         if (session)
@@ -569,7 +571,8 @@ sealed class ServerPage : Page
         sessionStarted = DateTime.Now;
         sessionFps = "";
         sessionEnding = false;
-        lastSessionDir = null;
+        lastSessionDir = sessionDir = null;
+        sessionDiscarding = false;
         App.Monitors.BaseUrl = remote ? tbRemote.Text.Trim() : $"http://127.0.0.1:{Port}";
         var task = App.RunPython(ConsoleKind.Session, "Sessione di misura", SessionCommand(), SessionFinished);
         if (task == null) App.Monitors.BaseUrl = $"http://127.0.0.1:{Port}";
@@ -587,8 +590,56 @@ sealed class ServerPage : Page
         StatusChanged();
     }
 
+    /// <summary>Stops the session (quest.py, its server, adb) and deletes its folder: nothing of it is kept.</summary>
+    public void DiscardSession()
+    {
+        if (!App.IsRunning(ConsoleKind.Session) || sessionEnding) return;
+        if (MessageBox.Show(App, "Terminare la sessione senza salvare?\n\nLa sua cartella" +
+                                 (sessionDir != null ? $" ({Path.GetFileName(sessionDir)})" : "") +
+                                 " viene cancellata: richieste, mesh e fps registrati finora.",
+                            "EdgeControl", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+            return;
+        sessionEnding = sessionDiscarding = true;
+        App.ConsoleOf(ConsoleKind.Session).Write("[EdgeControl] fine della sessione senza salvare\n");
+        App.ShowConsole(ConsoleKind.Session);
+        App.TaskOf(ConsoleKind.Session)?.Kill();
+        StatusChanged();
+    }
+
+    /// <summary>Deletes the folder of a discarded session; the killed processes may hold its files for a moment.</summary>
+    async void DeleteSessionDir(string dir)
+    {
+        var console = App.ConsoleOf(ConsoleKind.Session);
+        string root = Path.GetFullPath(Path.Combine(App.Repo.Root, "benchmarks", "results", "quest")) + Path.DirectorySeparatorChar;
+        if (dir == null || !Path.GetFullPath(dir).StartsWith(root, StringComparison.OrdinalIgnoreCase) || !Directory.Exists(dir))
+        {
+            console.Write("[EdgeControl] nessuna cartella della sessione da cancellare\n");
+            return;
+        }
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                Directory.Delete(dir, true);
+                console.Write($"[EdgeControl] cancellata {dir}\n");
+                App.ResultsPage.Reload(null);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                if (attempt == 10)
+                {
+                    console.Write($"[EdgeControl] non riesco a cancellare {dir}: {ex.Message}\n");
+                    return;
+                }
+                await Task.Delay(500);
+            }
+        }
+    }
+
     void OnSessionLine(string line)
     {
+        if (line.StartsWith("session folder: ")) sessionDir = line.Substring("session folder: ".Length).Trim();
         var fps = Regex.Match(line, @"app fps (\S+)");
         if (fps.Success) sessionFps = fps.Groups[1].Value;
         if (line.StartsWith("saved in ")) lastSessionDir = line.Substring("saved in ".Length).Trim();
@@ -597,6 +648,12 @@ sealed class ServerPage : Page
     void SessionFinished(RunningTask task)
     {
         sessionEnding = false;
+        if (sessionDiscarding)
+        {
+            sessionDiscarding = false;
+            lastSessionDir = null;
+            DeleteSessionDir(sessionDir);
+        }
         App.Monitors.BaseUrl = $"http://127.0.0.1:{Port}";
         if (lastSessionDir != null && Directory.Exists(lastSessionDir)) App.ResultsPage.Reload(lastSessionDir);
         StatusChanged();
@@ -630,7 +687,6 @@ sealed class ServerPage : Page
         tbExtra.Text = s.Get("extra", "");
         FillAddresses();
         SelectValue(cbIp, s.Get("ip", ""));
-        chkRestart.Checked = s.GetBool("restart_app", true);
         chkRemote.Checked = s.GetBool("remote", false);
         tbRemote.Text = s.Get("remote_url", "");
         ToggleAdvanced(s.GetBool("advanced", false));
@@ -660,7 +716,6 @@ sealed class ServerPage : Page
         s.Set("save_meshes", chkSave.Checked);
         s.Set("extra", tbExtra.Text);
         s.Set("ip", Value(cbIp));
-        s.Set("restart_app", chkRestart.Checked);
         s.Set("remote", chkRemote.Checked);
         s.Set("remote_url", tbRemote.Text);
         s.Set("advanced", advanced.Visible);

@@ -15,17 +15,18 @@ sealed class ResultsPage : Page
 
     SmoothListView list;
     RichTextBox preview;
-    FlatButton btnFolder, btnSummary, btnRegenerate, btnPull;
-    bool loaded;
+    FlatButton btnFolder, btnSummary, btnRegenerate, btnPull, btnDelete;
+    bool loaded, filling;
 
     public ResultsPage(MainForm app) : base(app) => Build();
 
     void Build()
     {
-        list = new SmoothListView { Dock = DockStyle.Fill };
-        foreach (var (title, width) in new[] { ("Data", 128), ("Collegamento", 96), ("Server", 210), ("Riassunto", 76) })
+        list = new SmoothListView { Dock = DockStyle.Fill, CheckBoxes = true };  // the boxes choose what «Cancella» deletes
+        foreach (var (title, width) in new[] { ("Data", 150), ("Collegamento", 96), ("Server", 196), ("Riassunto", 70) })
             list.Columns.Add(title, Theme.S(width));
         list.SelectedIndexChanged += (s, e) => ShowSelected();
+        list.ItemChecked += (s, e) => { if (!filling) UpdateDelete(); };
         list.DoubleClick += (s, e) => { if (Selected != null) Shell.Open(Selected); };
         // the preview is a text box with a white margin of its own, inside the same thin frame as the list
         preview = new RichTextBox
@@ -52,6 +53,8 @@ sealed class ResultsPage : Page
         btnPull = new FlatButton("Copia i CSV dal visore");
         var btnAll = new FlatButton("Tutte le sessioni", Look.Link);
         var btnReload = new FlatButton("Aggiorna");
+        btnDelete = new FlatButton("Cancella");
+        btnDelete.Click += (s, e) => DeleteChecked();
         btnFolder.Click += (s, e) => { if (Selected != null) Shell.Open(Selected); };
         btnSummary.Click += (s, e) => { if (Selected != null) Shell.Open(Path.Combine(Selected, "summary.md")); };
         btnRegenerate.Click += (s, e) => Regenerate();
@@ -64,7 +67,8 @@ sealed class ResultsPage : Page
         btnReload.Click += (s, e) => Reload(Selected);
         // what acts on the selected session, then what does not
         btnRegenerate.Margin = new Padding(0, 0, Theme.S(24), Theme.S(6));
-        var actions = Make.Row(btnFolder, btnSummary, btnRegenerate, btnPull, btnReload, btnAll);
+        btnPull.Margin = new Padding(0, 0, Theme.S(24), Theme.S(6));
+        var actions = Make.Row(btnFolder, btnSummary, btnRegenerate, btnDelete, btnPull, btnReload, btnAll);
         actions.Margin = new Padding(0, Theme.S(10), 0, 0);
 
         var root = Make.Column(
@@ -85,6 +89,8 @@ sealed class ResultsPage : Page
     {
         loaded = true;
         select ??= Selected;
+        var checkedDirs = new HashSet<string>(Checked, StringComparer.OrdinalIgnoreCase);
+        filling = true;
         list.BeginUpdate();
         try
         {
@@ -101,7 +107,7 @@ sealed class ResultsPage : Page
                 var link = name.EndsWith("_wifi") ? "Wi-Fi" : name.EndsWith("_usb") ? "cavo USB" : "–";
                 var item = new ListViewItem(new[] { when, link, Describe(dir), File.Exists(Path.Combine(dir, "summary.md")) ? "sì" : "–" })
                 {
-                    Tag = dir, ToolTipText = dir,
+                    Tag = dir, ToolTipText = dir, Checked = checkedDirs.Contains(dir),
                 };
                 list.Items.Add(item);
                 if (select != null && dir.Equals(select, StringComparison.OrdinalIgnoreCase)) item.Selected = true;
@@ -111,10 +117,53 @@ sealed class ResultsPage : Page
         finally
         {
             list.EndUpdate();
+            filling = false;
         }
         if (list.SelectedItems.Count > 0) list.SelectedItems[0].EnsureVisible();
         ShowSelected();
+        UpdateDelete();
         App.SessionsChanged();
+    }
+
+    List<string> Checked => list.CheckedItems.Cast<ListViewItem>().Select(i => (string)i.Tag).ToList();
+
+    void UpdateDelete()
+    {
+        int n = list.CheckedItems.Count;
+        btnDelete.Text = n > 0 ? $"Cancella ({n})" : "Cancella";
+        btnDelete.Enabled = n > 0 && !App.IsRunning(ConsoleKind.Session);  // the running session's folder is in the list
+    }
+
+    /// <summary>Moves the checked session folders to the Recycle Bin, after a confirmation.</summary>
+    void DeleteChecked()
+    {
+        var dirs = Checked;
+        if (dirs.Count == 0 || App.IsRunning(ConsoleKind.Session)) return;
+        var names = string.Join("\n", dirs.Take(12).Select(d => "  " + Path.GetFileName(d))) +
+                    (dirs.Count > 12 ? $"\n  … e altre {dirs.Count - 12}" : "");
+        if (MessageBox.Show(App, $"Cancellare {(dirs.Count == 1 ? "questa sessione" : $"queste {dirs.Count} sessioni")}?\n\n{names}\n\n" +
+                                 "Le cartelle vanno nel Cestino di Windows.",
+                            "EdgeControl", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+            return;
+        var root = Path.GetFullPath(App.Repo.QuestResults).TrimEnd('\\') + "\\";
+        var failed = new List<string>();
+        foreach (var dir in dirs)
+        {
+            try
+            {
+                if (!Path.GetFullPath(dir).StartsWith(root, StringComparison.OrdinalIgnoreCase)) continue;  // only session folders
+                Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(dir, Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                                                                        Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is OperationCanceledException)
+            {
+                failed.Add($"{Path.GetFileName(dir)}: {ex.Message}");
+            }
+        }
+        App.Log($"Risultati: {dirs.Count - failed.Count} sessioni nel Cestino" + (failed.Count > 0 ? $", {failed.Count} non cancellate" : ""));
+        Reload();
+        if (failed.Count > 0)
+            MessageBox.Show(App, "Non cancellate:\n\n" + string.Join("\n", failed), "EdgeControl", MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 
     /// <summary>What the server reconstructed with, from session.json.</summary>
@@ -178,5 +227,6 @@ sealed class ResultsPage : Page
     {
         btnRegenerate.Enabled = Selected != null && !App.IsRunning(ConsoleKind.Commands);
         btnPull.Enabled = App.Headset.State == "device" && !App.IsRunning(ConsoleKind.Commands);
+        UpdateDelete();
     }
 }
