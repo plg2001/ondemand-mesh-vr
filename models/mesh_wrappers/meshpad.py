@@ -26,6 +26,7 @@ import contextlib
 import os
 import sys
 import types
+import warnings
 from argparse import Namespace
 from pathlib import Path
 from typing import Optional
@@ -75,6 +76,26 @@ def _upcast_while_running(module: torch.nn.Module) -> None:
 
     module.register_forward_pre_hook(to_fp32)
     module.register_forward_hook(to_fp16)
+
+
+@contextlib.contextmanager
+def _quiet_build():
+    """Hides the notices the upstream code prints while the empty model is built; none of them is a fault:
+    - RADIO's hub code copies its checkpoint into the meta-device model, a no-op PyTorch warns about once per tensor
+      (~390 lines): every weight, RADIO's included, is then set from addition.pth, and load() fails if one is missing;
+    - transformers: "model of type opt to instantiate a model of type shape_opt" (MeshAnything V2's OPT subclass) and
+      "use_flash_attention_2 is deprecated" (the upstream flag; flash_shim replaces that attention when it is unusable)."""
+    from transformers.utils import logging as hf_logging
+
+    level = hf_logging.get_verbosity()
+    hf_logging.set_verbosity_error()
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=r".*copying from a non-meta parameter in the checkpoint to a meta "
+                                                      r"parameter.*")
+            yield
+    finally:
+        hf_logging.set_verbosity(level)
 
 
 class MeshPadWrapper(MeshModelWrapper):
@@ -175,7 +196,7 @@ class MeshPadWrapper(MeshModelWrapper):
         if not flash_shim.is_installed() and not flash_shim.real_flash_usable(self.device):
             flash_shim.install()  # MeshPad hard-wires flash_attention_2: without flash-attn it would refuse to build
         MeshPadAdd, _ = self._import_upstream()
-        with self._radio_from_pinned_clone(), init_empty_weights(include_buffers=False):
+        with self._radio_from_pinned_clone(), init_empty_weights(include_buffers=False), _quiet_build():
             return MeshPadAdd(self._args())
 
     # ------------------------------------------------------------------ loading
